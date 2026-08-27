@@ -33,6 +33,7 @@ int main() {
     sendUsername(clientSocketFD);
 
     printf("You are now in the chat.\n");
+    printHelpMenu("./protocols.txt");
 
     runClientLoop(clientSocketFD);
 

@@ -17,5 +17,6 @@ struct AcceptedSocket* acceptConnection(int serverSocketFD);
 void startConnections(int serverSocketFD);
 void sendUsername(int clientSocketFD);
 void runClientLoop(int clientSocketFD);
+void printHelpMenu(const char* filepath);
 
 #endif

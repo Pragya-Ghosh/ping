@@ -182,39 +182,125 @@ void handleSendAll(int i, char* messageContent, struct pollfd fds[], char client
     fflush(stdout);
 }
 
+//process LIST command
+void handleList(int i, struct pollfd fds[], char clientNames[][32]) {
+    char listMsg[1024] = "ONLINE ";
+    int first = 1;
+    for (int j = 1; j < 100; j++) {
+        if (fds[j].fd != -1 && clientNames[j][0] != '\0') {
+            if (!first) strcat(listMsg, ", ");
+            strcat(listMsg, clientNames[j]);
+            first = 0;
+        }
+    }
+    strcat(listMsg, "\n");
+    send(fds[i].fd, listMsg, strlen(listMsg), 0);
+    
+    printf("[SERVER LOG] Sent online user list to %s\n", clientNames[i]);
+    fflush(stdout);
+}
+
+//process SENDFILE command
+void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32]) {
+    char targetName[32];
+    char filename[128];
+    int fileSize;
+
+    //find the newline that separates the protocol header from the file payload
+    char* payload = strchr(buffer, '\n');
+    if (!payload) {
+        char *errMsg = "ERROR invalid command format\n";
+        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        return;
+    }
+    
+    *payload = '\0'; //split header and payload
+    payload++; //point to the first byte of the file
+    int headerLen = payload - buffer;
+    int actualPayloadBytes = n - headerLen; 
+
+    //parse framing format: SENDFILE TO <username> <filename> <size>
+    if (sscanf(buffer, "SENDFILE TO %31s %127s %d", targetName, filename, &fileSize) == 3) {
+        
+        //check for valid .txt extension
+        char* ext = strrchr(filename, '.');
+        if (!ext || strcmp(ext, ".txt") != 0) {
+            char *errMsg = "ERROR only .txt files are supported\n";
+            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            return;
+        }
+
+        //check size limit (1MB max)
+        if (fileSize > 1048576) {
+            char *errMsg = "ERROR file exceeds 1MB limit\n";
+            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            return;
+        }
+
+        int targetIndex = findClientIndex(targetName, fds, clientNames);
+        if (targetIndex != -1) {
+            //construct receiver frame: RECVFILE FROM <sender> <filename> <size>\n
+            char header[256];
+            int hLen = snprintf(header, sizeof(header), "RECVFILE FROM %s %s %d\n", clientNames[i], filename, fileSize);
+            
+            //forward header and raw payload
+            send(fds[targetIndex].fd, header, hLen, 0);
+            send(fds[targetIndex].fd, payload, actualPayloadBytes, 0);
+            
+            printf("[SERVER LOG] Routed file %s (%d bytes) from %s to %s\n", filename, fileSize, clientNames[i], targetName);
+            fflush(stdout);
+        } 
+        else {
+            char errMsg[100];
+            snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
+            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        }
+    }
+}
+
 //route active chat commands
-void handleChatCommand(int i, char* buffer, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    
+    //sendfile payloads have raw bytes, so do not strip newlines
+    if (strncmp(buffer, "SENDFILE TO ", 12) == 0) {
+        handleSendFile(i, buffer, n, fds, clientNames);
+        return;
+    }
+
+    //for normal text commands, safely strip trailing newline
+    buffer[strcspn(buffer, "\r\n")] = '\0';
+
     char targetName[32];
     char messageContent[1024];
 
-    if (strcmp(buffer, "QUIT") == 0) {
+    if (strcmp(buffer, "QUIT") == 0) 
         handleQuit(i, fds, clientNames, clientKeys);
-    }
-    else if (sscanf(buffer, "SEND TO %31[^:]: %[^\n]", targetName, messageContent) == 2) {
+
+    else if (strcmp(buffer, "LIST") == 0) 
+        handleList(i, fds, clientNames);
+
+    else if (sscanf(buffer, "SEND TO %31[^:]: %[^\n]", targetName, messageContent) == 2) 
         handleSendTo(i, targetName, messageContent, fds, clientNames);
-    }
-    else if (sscanf(buffer, "SEND ALL: %[^\n]", messageContent) == 1) {
+    
+
+    else if (sscanf(buffer, "SEND ALL: %[^\n]", messageContent) == 1) 
         handleSendAll(i, messageContent, fds, clientNames);
-    }
+    
+
     else {
-        //for bad typing/garbage bytes
         char *errMsg = "ERROR invalid command format\n";
         send(fds[i].fd, errMsg, strlen(errMsg), 0);
-        
-        printf("[SERVER LOG] Rejected malformed input from %s: %s\n", clientNames[i], buffer);
+        printf("[SERVER LOG] Rejected malformed input from %s\n", clientNames[i]);
         fflush(stdout);
     }
 }
 
 //start accepting incoming connections concurrently using poll()
 void startConnections(int serverSocketFD) {
-    //create a radar board that can hold up to 100 clients
     struct pollfd fds[100]; 
-    //to store usernames and keys of the clients
     char clientNames[100][32];
     char clientKeys[100][32]; 
     
-    //Initialize all slots to empty 
     for (int i = 0; i < 100; i++) {
         fds[i].fd = -1;
         fds[i].events = POLLIN; 
@@ -226,6 +312,9 @@ void startConnections(int serverSocketFD) {
     printf("Ping! Server polling for connections on port 2000...\n");
     fflush(stdout);
 
+    //allocate 1MB buffer on heap to handle file transfers without stack overflow
+    char* buffer = malloc(1048576 + 1024);
+
     while (1) {
         int poll_count = poll(fds, 100, -1); 
 
@@ -234,40 +323,36 @@ void startConnections(int serverSocketFD) {
             break;
         }
 
-        //main server socket flashed (new connection)
         if (fds[0].revents & POLLIN) {
             handleNewConnection(serverSocketFD, fds, clientNames, clientKeys);
         }
 
-        //existing client socket flashed (new data)
         for (int i = 1; i < 100; i++) {
             if (fds[i].fd != -1 && (fds[i].revents & POLLIN)) {
                 
-                char buffer[1024];
-                int n = recv(fds[i].fd, buffer, 1023, 0);
+                int n = recv(fds[i].fd, buffer, 1048576 + 1023, 0);
 
                 if (n <= 0) {
-                    //client disconnected 
                     printf("[SERVER LOG] %s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
                     fflush(stdout);
                     removeClient(i, fds, clientNames, clientKeys);
                 } 
                 else {
                     buffer[n] = '\0';
-                    buffer[strcspn(buffer, "\r\n")] = '\0';
 
                     if (clientNames[i][0] == '\0') {
-                        //name empty means they need to register
+                        buffer[strcspn(buffer, "\r\n")] = '\0';
                         handleRegistration(i, buffer, fds, clientNames, clientKeys);
                     } 
                     else {
-                        //targeted message routing
-                        handleChatCommand(i, buffer, fds, clientNames, clientKeys);
+                        //pass exact byte count 'n' for file handling
+                        handleChatCommand(i, buffer, n, fds, clientNames, clientKeys);
                     }
                 }
             }
         }
     }
+    free(buffer);
 }
 
 
@@ -310,20 +395,97 @@ void sendUsername(int clientSocketFD) {
 }
 
 
+//intercept keyboard input and package files if necessary
+void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
+    if (strncmp(line, "SENDFILE TO ", 12) == 0) {
+        char targetName[32];
+        char filename[256];
+        
+        //parse UI format: SENDFILE TO <username>: <filename>.txt
+        if (sscanf(line, "SENDFILE TO %31[^:]: %255s", targetName, filename) == 2) {
+            FILE *f = fopen(filename, "rb");
+            if (!f) {
+                printf("server$ ERROR file not found: %s\n", filename);
+            } 
+            else {
+                fseek(f, 0, SEEK_END);
+                long fsize = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                
+                if (fsize > 1048576) {
+                    printf("server$ ERROR file exceeds 1MB limit\n");
+                } 
+                else {
+                    char *fileBuf = malloc(fsize + 1024);
+                    int headerLen = snprintf(fileBuf, fsize + 1024, "SENDFILE TO %s %s %ld\n", targetName, filename, fsize);
+                    
+                    fread(fileBuf + headerLen, 1, fsize, f);
+                    send(clientSocketFD, fileBuf, headerLen + fsize, 0);
+                    free(fileBuf);
+                }
+                fclose(f);
+            }
+        } 
+        else {
+            printf("client$ ERROR invalid format. Use: SENDFILE TO user: filename.txt\n");
+        }
+    } 
+    else {
+        //normal text message
+        send(clientSocketFD, line, charCount, 0);
+    }
+}
+
+//intercept server messages and save files to disk
+void processServerMessage(char* buffer, int n) {
+    buffer[n] = '\0';
+    
+    if (strncmp(buffer, "RECVFILE FROM ", 14) == 0) {
+        char sender[32];
+        char filename[128];
+        int fsize;
+        
+        char* payload = strchr(buffer, '\n');
+        if (payload) {
+            *payload = '\0';
+            payload++;
+            
+            if (sscanf(buffer, "RECVFILE FROM %31s %127s %d", sender, filename, &fsize) == 3) {
+                char outName[256];
+                snprintf(outName, sizeof(outName), "received_%s", filename);
+                
+                FILE *out = fopen(outName, "wb");
+                if (out) {
+                    fwrite(payload, 1, fsize, out);
+                    fclose(out);
+                    printf("RECVFILE FROM %s: %s (%d bytes)\n[content saved to ./%s]\n", sender, filename, fsize, outName);
+                } 
+                else {
+                    printf("client$ ERROR could not write file %s\n", outName);
+                }
+            }
+        }
+    } 
+    else {
+        //normal server text message
+        printf("%s", buffer);
+    }
+}
+
 //poll for client, so it can handle keyboard input and server chat at the same time
 void runClientLoop(int clientSocketFD) {
     struct pollfd fds[2];
     
-    //slot 0: watch the keyboard (client input)
     fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
 
-    //slot 1: watch server socket (chat conversation)
     fds[1].fd = clientSocketFD;
     fds[1].events = POLLIN;
 
+    //allocate 1MB buffer on heap to handle incoming files
+    char* serverBuffer = malloc(1048576 + 1024);
+
     while(1) {
-        //wait for either keyboard or server chat to do something
         int poll_count = poll(fds, 2, -1);
         if (poll_count < 0) {
             perror("Poll error");
@@ -337,29 +499,52 @@ void runClientLoop(int clientSocketFD) {
             
             ssize_t charCount = getline(&line, &lineSize, stdin);
             if(charCount > 0) {
-                if(strcmp(line, "exit\n") == 0) {
+                if(strcmp(line, "exit\n") == 0 || strcmp(line, "QUIT\n") == 0) {
+                    send(clientSocketFD, "QUIT", 4, 0); 
                     free(line); 
                     break;
                 }
                 
-                send(clientSocketFD, line, charCount, 0);
+                processClientInput(clientSocketFD, line, charCount);
             }
             free(line); 
         }
 
-        //server sent a broadcast message
+        //server sent a message or file
         if (fds[1].revents & POLLIN) {
-            char buffer[1024];
-            int n = recv(clientSocketFD, buffer, 1023, 0);
+            int n = recv(clientSocketFD, serverBuffer, 1048576 + 1023, 0);
             
             if (n <= 0) {
                 printf("\nServer closed the connection.\n");
                 break;
             } 
             else {
-                buffer[n] = '\0';
-                printf("%s", buffer);
+                processServerMessage(serverBuffer, n);
             }
         }
     }
+    free(serverBuffer);
 }
+
+
+
+//read and print the available chat commands from a text file
+void printHelpMenu(const char* filepath) {
+    FILE *file = fopen(filepath, "r");
+    
+    if (file == NULL) {
+        //fallback if the text file is missing or path is wrong
+        printf("Type 'QUIT' to leave, or 'LIST' to see online users.\n");
+        return;
+    }
+
+    char line[256];
+    printf("\n");
+    while (fgets(line, sizeof(line), file)) {
+        printf("%s", line);
+    }
+    printf("\n");
+    
+    fclose(file);
+}
+
