@@ -32,7 +32,7 @@ int main() {
 
     sendUsername(clientSocketFD);
 
-    printf("You are now in the chat. (type 'exit' to leave)\n");
+    printf("You are now in the chat.\n");
 
     runClientLoop(clientSocketFD);
 
