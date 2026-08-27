@@ -1,25 +1,22 @@
+#include <netinet/in.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include "../shared/utils.h"
 
 int main() {
     
-    /*create a TCP socket*/
-    //IPv4, TCP, default protocol
-    int socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    /*create the client socket*/
+    int clientSocketFD = createSocket();
 
     /*connect to server*/
-    //configure server address
-    struct sockaddr_in saddr = {
-        .sin_port = htons(80),
-        .sin_family = AF_INET, 
-        .sin_addr.s_addr = inet_addr("172.217.26.46")
-    };
+    struct sockaddr_in* saddr = createAddress("127.0.0.1", 2000);
 
-    //connect to server
-    int connectFD = connect(socketFD, (struct sockaddr *)&saddr, sizeof(saddr));
+    int connectFD = connect(clientSocketFD, (struct sockaddr*)saddr, sizeof(*saddr));
     
     if (connectFD == 0)
         printf("Connection was successful\n");
@@ -27,22 +24,21 @@ int main() {
      printf("No\n");
 
 
-    /*send some data to the server*/
-    char* message;
-    //http request from client
-    message = "GET \\ HTTP/1.1\r\nHost:google.com\r\n\r\n";
-    send(socketFD, message, strlen(message), 0);
+    char* line = NULL;
+    size_t lineSize = 0;
+    printf("Ping! Join the conversation down below: (type 'exit' to leave)\n");
+    while(1) {
+        ssize_t charCount = getline(&line, &lineSize, stdin);
+        if(charCount > 0) {
+            if(strcmp(line, "exit\n") == 0)
+                break;
 
-    /*receive a response from server*/
-    char buffer[1024];
-    //returns the number of bytes received
-    int n = recv(socketFD, buffer, 1023, 0);
-    if(n > 0) {
-        buffer[n] = '\0'; 
-        printf("Response was: %s\n", buffer);
+            ssize_t n = send(clientSocketFD, line, charCount, 0);
+        }
+
     }
 
-    close(socketFD);
+    close(clientSocketFD);
 
     return 0;
 }
