@@ -27,7 +27,11 @@ int main() {
     /*client chat*/
     char* line = NULL;
     size_t lineSize = 0;
-    printf("Ping! Join the conversation down below: (type 'exit' to leave)\n");
+    printf("Ping! Join the conversation down below:\n");
+
+    sendUsername(clientSocketFD);
+
+    printf("You are now in the chat. (type 'exit' to leave)\n");
     while(1) {
         ssize_t charCount = getline(&line, &lineSize, stdin);
         if(charCount > 0) {

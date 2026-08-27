@@ -15,5 +15,6 @@ int createSocket();
 struct sockaddr_in* createAddress(char* ip, int port);
 struct AcceptedSocket* acceptConnection(int serverSocketFD);
 void startConnections(int serverSocketFD);
+void sendUsername(int clientSocketFD);
 
 #endif

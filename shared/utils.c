@@ -57,11 +57,14 @@ struct AcceptedSocket* acceptConnection(int serverSocketFD) {
 void startConnections(int serverSocketFD) {
     //create a radar board that can hold up to 100 clients
     struct pollfd fds[100]; 
+    //to store usernames of the clients
+    char clientNames[100][32];
     
     //Initialize all slots to empty 
     for (int i = 0; i < 100; i++) {
         fds[i].fd = -1;
         fds[i].events = POLLIN; //because we want to know when data comes 'in'
+        clientNames[i][0] = '\0';
     }
 
     //main server socket at first slot
@@ -89,6 +92,7 @@ void startConnections(int serverSocketFD) {
                 for (int i = 1; i < 100; i++) {
                     if (fds[i].fd == -1) {
                         fds[i].fd = clientSocket->acceptedSocketFD;
+                        clientNames[i][0] = '\0'; 
                         break;
                     }
                 }
@@ -105,16 +109,41 @@ void startConnections(int serverSocketFD) {
 
                 if (n <= 0) {
                     //client disconnected
-                    printf("Client on socket %d disconnected\n", fds[i].fd);
+                    printf("%s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
+                    //remove client from poll 
                     close(fds[i].fd);
-                    fds[i].fd = -1; //remove client from poll array
+                    fds[i].fd = -1; 
+                    clientNames[i][0] = '\0';
                 } 
                 else {
-                    //Successfully received message
+                    //successfully received message
                     buffer[n] = '\0';
-                    printf("Client %d says: %s", fds[i].fd, buffer);
+
+                    if (clientNames[i][0] == '\0') {
+                        //name empty means it's their first message
+                        strncpy(clientNames[i], buffer, 31);
+                        printf("[SERVER] %s joined the chat!\n", clientNames[i]);
+                    } 
+                    else {
+                        //not a new client, was already in conversation
+                        printf("%s: %s", clientNames[i], buffer);
+                    }
                 }
             }
         }
     }
+}
+
+//prompt client for username and send it to server
+void sendUsername(int clientSocketFD) {
+    char username[32];
+    
+    printf("Enter your username: ");
+    fgets(username, sizeof(username), stdin);
+    
+    //replacing \n with null terminator
+    username[strcspn(username, "\n")] = '\0';
+
+    //send the username to the server
+    send(clientSocketFD, username, strlen(username), 0);
 }
