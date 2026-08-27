@@ -126,7 +126,19 @@ void startConnections(int serverSocketFD) {
                     } 
                     else {
                         //not a new client, was already in conversation
-                        printf("%s: %s", clientNames[i], buffer);
+                        char broadcastMsg[1100]; 
+                        snprintf(broadcastMsg, sizeof(broadcastMsg), "%s: %s", clientNames[i], buffer);
+                        
+                        //print to server terminal just to see
+                        printf("%s", broadcastMsg);
+                        
+                        //loop through everyone and send it out
+                        for (int j = 1; j < 100; j++) {
+                            //send if slot is active and it's not the sender
+                            if (fds[j].fd != -1 && j != i) {
+                                send(fds[j].fd, broadcastMsg, strlen(broadcastMsg), 0);
+                            }
+                        }
                     }
                 }
             }
@@ -147,3 +159,5 @@ void sendUsername(int clientSocketFD) {
     //send the username to the server
     send(clientSocketFD, username, strlen(username), 0);
 }
+
+
