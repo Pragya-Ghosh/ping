@@ -26,22 +26,12 @@ int main() {
     int listenFD = listen(serverSocketFD, 10);
 
     /*accept multiple connections in multiple threads*/
-    struct AcceptedSocket* clientSocket = acceptConnections(serverSocketFD);
 
-
-    char buffer[1024];
-    while (1) {
-        int n = recv(clientSocket->acceptedSocketFD, buffer, 1023, 0);
-        if(n > 0) {
-            buffer[n] = '\0';
-            printf("Message was: %s\n", buffer);
-        }
-        else break;
-    }
+    startConnections(serverSocketFD);
 
 
     close(serverSocketFD);
-    close(clientSocket->acceptedSocketFD);
+    
 
     return 0;
 }

@@ -3,13 +3,22 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <string.h>
+#include <poll.h> 
 
 #include "utils.h" 
 
 //create TCP socket: IPv4, TCP, default protocol
 int createSocket() {
-    return socket(AF_INET, SOCK_STREAM, 0);
+    int socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    
+    //Bypass the OS TIME_WAIT state to allow immediate port reuse
+    //ensures rapid server restarts during testing
+    int opt = 1;
+    setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    return socketFD;
 }
 
 //configure IPv4 socket address
@@ -26,8 +35,8 @@ struct sockaddr_in* createAddress(char* ip, int port) {
     return address;
 }
 
-//accept incoming connections
-struct AcceptedSocket* acceptConnections(int serverSocketFD) {
+//accept incoming connection
+struct AcceptedSocket* acceptConnection(int serverSocketFD) {
     struct sockaddr_in clientAddress;
     socklen_t clientAddressLength = sizeof(clientAddress);
     int clientSocketFD = accept(serverSocketFD, (struct sockaddr *)&clientAddress, &clientAddressLength);
@@ -41,4 +50,71 @@ struct AcceptedSocket* acceptConnections(int serverSocketFD) {
         acceptedSocket->error = clientSocketFD;
 
     return acceptedSocket;
+}
+
+
+//start accepting incoming connections concurrently using poll()
+void startConnections(int serverSocketFD) {
+    //create a radar board that can hold up to 100 clients
+    struct pollfd fds[100]; 
+    
+    //Initialize all slots to empty 
+    for (int i = 0; i < 100; i++) {
+        fds[i].fd = -1;
+        fds[i].events = POLLIN; //because we want to know when data comes 'in'
+    }
+
+    //main server socket at first slot
+    fds[0].fd = serverSocketFD;
+
+    printf("Ping! Server polling for connections on port 2000...\n");
+
+    while (1) {
+        //wait for activity on any socket
+        int poll_count = poll(fds, 100, -1); //-1 means block until something happens
+
+        if (poll_count < 0) {
+            perror("Poll error");
+            break;
+        }
+
+        //main server socket flashed (new connection)
+        if (fds[0].revents & POLLIN) {
+            struct AcceptedSocket* clientSocket = acceptConnection(serverSocketFD);
+            
+            if (clientSocket->acceptedSuccessfully) {
+                printf("New client connected on socket %d\n", clientSocket->acceptedSocketFD);
+                
+                //find an empty slot in array to put the new client in
+                for (int i = 1; i < 100; i++) {
+                    if (fds[i].fd == -1) {
+                        fds[i].fd = clientSocket->acceptedSocketFD;
+                        break;
+                    }
+                }
+            }
+            free(clientSocket); 
+        }
+
+        //existing client socket flashed (new message)
+        for (int i = 1; i < 100; i++) {
+            if (fds[i].fd != -1 && (fds[i].revents & POLLIN)) {
+                
+                char buffer[1024];
+                int n = recv(fds[i].fd, buffer, 1023, 0);
+
+                if (n <= 0) {
+                    //client disconnected
+                    printf("Client on socket %d disconnected\n", fds[i].fd);
+                    close(fds[i].fd);
+                    fds[i].fd = -1; //remove client from poll array
+                } 
+                else {
+                    //Successfully received message
+                    buffer[n] = '\0';
+                    printf("Client %d says: %s", fds[i].fd, buffer);
+                }
+            }
+        }
+    }
 }

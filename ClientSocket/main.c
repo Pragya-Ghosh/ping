@@ -24,6 +24,7 @@ int main() {
      printf("No\n");
 
 
+    /*client chat*/
     char* line = NULL;
     size_t lineSize = 0;
     printf("Ping! Join the conversation down below: (type 'exit' to leave)\n");

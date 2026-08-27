@@ -6,11 +6,11 @@ all: client server
 
 # How to build the client
 client: ClientSocket/main.c shared/utils.c
-	$(CC) $(CFLAGS) ClientSocket/main.c shared/utils.c -o ClientSocket/client
+	$(CC) $(CFLAGS) ClientSocket/main.c shared/utils.c -o client
 
 # How to build the server
 server: ServerSocket/main.c shared/utils.c
-	$(CC) $(CFLAGS) ServerSocket/main.c shared/utils.c -o ServerSocket/server
+	$(CC) $(CFLAGS) ServerSocket/main.c shared/utils.c -o server
 
 # Clean up compiled files
 clean:

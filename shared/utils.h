@@ -10,9 +10,10 @@ struct AcceptedSocket {
     int acceptedSuccessfully;
 };
 
-// Function declarations
+
 int createSocket();
 struct sockaddr_in* createAddress(char* ip, int port);
-struct AcceptedSocket* acceptConnections(int serverSocketFD);
+struct AcceptedSocket* acceptConnection(int serverSocketFD);
+void startConnections(int serverSocketFD);
 
 #endif
