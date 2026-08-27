@@ -57,24 +57,24 @@ struct AcceptedSocket* acceptConnection(int serverSocketFD) {
 void startConnections(int serverSocketFD) {
     //create a radar board that can hold up to 100 clients
     struct pollfd fds[100]; 
-    //to store usernames of the clients
+    //to store usernames and keys of the clients
     char clientNames[100][32];
+    char clientKeys[100][32]; 
     
     //Initialize all slots to empty 
     for (int i = 0; i < 100; i++) {
         fds[i].fd = -1;
-        fds[i].events = POLLIN; //because we want to know when data comes 'in'
+        fds[i].events = POLLIN; 
         clientNames[i][0] = '\0';
+        clientKeys[i][0] = '\0';
     }
 
-    //main server socket at first slot
     fds[0].fd = serverSocketFD;
-
     printf("Ping! Server polling for connections on port 2000...\n");
+    fflush(stdout); //force terminal to print immediately
 
     while (1) {
-        //wait for activity on any socket
-        int poll_count = poll(fds, 100, -1); //-1 means block until something happens
+        int poll_count = poll(fds, 100, -1); 
 
         if (poll_count < 0) {
             perror("Poll error");
@@ -86,13 +86,15 @@ void startConnections(int serverSocketFD) {
             struct AcceptedSocket* clientSocket = acceptConnection(serverSocketFD);
             
             if (clientSocket->acceptedSuccessfully) {
-                printf("New client connected on socket %d\n", clientSocket->acceptedSocketFD);
+                printf("[SERVER LOG] New connection on socket %d\n", clientSocket->acceptedSocketFD);
+                fflush(stdout);
                 
                 //find an empty slot in array to put the new client in
                 for (int i = 1; i < 100; i++) {
                     if (fds[i].fd == -1) {
                         fds[i].fd = clientSocket->acceptedSocketFD;
                         clientNames[i][0] = '\0'; 
+                        clientKeys[i][0] = '\0'; 
                         break;
                     }
                 }
@@ -100,7 +102,7 @@ void startConnections(int serverSocketFD) {
             free(clientSocket); 
         }
 
-        //existing client socket flashed (new message)
+        //existing client socket flashed (new data)
         for (int i = 1; i < 100; i++) {
             if (fds[i].fd != -1 && (fds[i].revents & POLLIN)) {
                 
@@ -109,32 +111,71 @@ void startConnections(int serverSocketFD) {
 
                 if (n <= 0) {
                     //client disconnected
-                    printf("%s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
-                    //remove client from poll 
+                    printf("[SERVER LOG] %s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
+                    fflush(stdout);
+                    
                     close(fds[i].fd);
                     fds[i].fd = -1; 
                     clientNames[i][0] = '\0';
+                    clientKeys[i][0] = '\0';
                 } 
                 else {
-                    //successfully received message
                     buffer[n] = '\0';
+                    buffer[strcspn(buffer, "\r\n")] = '\0';
 
                     if (clientNames[i][0] == '\0') {
-                        //name empty means it's their first message
-                        strncpy(clientNames[i], buffer, 31);
-                        printf("[SERVER] %s joined the chat!\n", clientNames[i]);
+                        //name empty means they need to register
+                        char parsedName[32];
+                        char parsedKey[32];
+
+                        //parsing formatted string
+                        if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
+                            
+                            //check for duplicate usernames
+                            int duplicate = 0;
+                            for (int j = 1; j < 100; j++) {
+                                if (fds[j].fd != -1 && strcmp(clientNames[j], parsedName) == 0) {
+                                    duplicate = 1;
+                                    break;
+                                }
+                            }
+
+                            if (duplicate) {
+                                char errMsg[100];
+                                snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
+                                send(fds[i].fd, errMsg, strlen(errMsg), 0);
+                                
+                                printf("[SERVER LOG] Rejected duplicate username: %s\n", parsedName);
+                                fflush(stdout);
+                            } 
+                            else {
+                                strcpy(clientNames[i], parsedName);
+                                strcpy(clientKeys[i], parsedKey);
+                                
+                                char successMsg[100];
+                                snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
+                                send(fds[i].fd, successMsg, strlen(successMsg), 0);
+                                
+                                printf("[SERVER LOG] %s registered with key %s\n", clientNames[i], clientKeys[i]);
+                                fflush(stdout);
+                            }
+                        } 
+                        else {
+                            char *errMsg = "ERROR invalid command format\n";
+                            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+                            
+                            printf("[SERVER LOG] Invalid registration format received.\n");
+                            fflush(stdout);
+                        }
                     } 
                     else {
-                        //not a new client, was already in conversation
                         char broadcastMsg[1100]; 
-                        snprintf(broadcastMsg, sizeof(broadcastMsg), "%s: %s", clientNames[i], buffer);
+                        snprintf(broadcastMsg, sizeof(broadcastMsg), "%s: %s\n", clientNames[i], buffer);
                         
-                        //print to server terminal just to see
-                        printf("%s", broadcastMsg);
+                        printf("[SERVER LOG] Broadcasting: %s", broadcastMsg);
+                        fflush(stdout);
                         
-                        //loop through everyone and send it out
                         for (int j = 1; j < 100; j++) {
-                            //send if slot is active and it's not the sender
                             if (fds[j].fd != -1 && j != i) {
                                 send(fds[j].fd, broadcastMsg, strlen(broadcastMsg), 0);
                             }
@@ -146,18 +187,43 @@ void startConnections(int serverSocketFD) {
     }
 }
 
-//prompt client for username and send it to server
+
+//prompt client for username and key
 void sendUsername(int clientSocketFD) {
     char username[32];
+    char key[32];
+    char payload[100];
+    char response[1024];
     
-    printf("Enter your username: ");
-    fgets(username, sizeof(username), stdin);
-    
-    //replacing \n with null terminator
-    username[strcspn(username, "\n")] = '\0';
+    while (1) {
+        printf("Enter your username: ");
+        fgets(username, sizeof(username), stdin);
+        username[strcspn(username, "\n")] = '\0'; 
 
-    //send the username to the server
-    send(clientSocketFD, username, strlen(username), 0);
+        printf("Enter your encryption key: ");
+        fgets(key, sizeof(key), stdin);
+        key[strcspn(key, "\n")] = '\0';
+
+        //formatted input as per registration protocol: REGISTER <username> KEY <key>
+        snprintf(payload, sizeof(payload), "REGISTER %s KEY %s", username, key);
+        send(clientSocketFD, payload, strlen(payload), 0);
+
+        //wait for server reply
+        int n = recv(clientSocketFD, response, sizeof(response) - 1, 0);
+        if (n > 0) {
+            response[n] = '\0';
+            printf("server$ %s\n", response);
+            
+            //if successful, break out of loop and enter the chat
+            if (strncmp(response, "REGISTERED", 10) == 0) {
+                break; 
+            }
+        } 
+        else {
+            printf("Server disconnected.\n");
+            exit(1);
+        }
+    }
 }
 
 
