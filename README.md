@@ -1,7 +1,7 @@
 # Ping! A Secure Chat Application.
 
 ## Group Members
-* Pragya Ghosh (24051500) 
+Pragya Ghosh (24051500) 
 
 ## How to Build
 This project uses CMake to ensure cross-platform compatibility and clean source directories.
@@ -10,8 +10,8 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 3. Compile the executables: `make`
 
 ## How to Run
-Server: `./server` (Defaults to port 2000)
-Client: `./client` (Connects to 127.0.0.1 on port 2000)
+* Server: `./server` (Defaults to port 2000)
+* Client: `./client` (Connects to 127.0.0.1 on port 2000)
 
 ## Cipher Choice
 
