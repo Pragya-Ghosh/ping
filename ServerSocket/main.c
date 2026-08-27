@@ -23,9 +23,8 @@ int main() {
 
     
     /*listen for incoming connections*/
-    int listenFD = listen(serverSocketFD, 10);
-
-    /*accept multiple connections in multiple threads*/
+    //using maximum system backlog
+    int listenFD = listen(serverSocketFD, SOMAXCONN);
 
     startConnections(serverSocketFD);
 
