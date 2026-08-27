@@ -19,15 +19,17 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 **Known weakness:** 
 
 ## Design Notes
+* **Hop-by-hop encryption:** This scheme decrypts and re-encrypts messages per client key at the server level. The server briefly holds the plaintext in memory to parse commands (like `SEND TO`) and re-encrypts the payload using the recipient's key before forwarding. True end-to-end encryption would require clients to establish a shared key directly with each other (e.g., via Diffie-Hellman key exchange) without the server ever possessing the ability to decrypt the payloads.
 
-* **Concurrency Model (`poll` multiplexing):** The server utilizes a single-threaded `poll()` event loop rather than spawning POSIX threads (`pthreads`) or processes (`fork`) per connection. This "radar board" approach monitors file descriptors continuously, virtually eliminating context-switching overhead and preventing the race conditions associated with shared-memory chat states.
+* **File transfer size cap:** 1 MB. This hard limit prevents buffer overflow faults and ensures stable heap allocation without requiring chunked or streaming transfer implementations. 
 
-* **State Management & Data Locality:** Client states (usernames, symmetric keys, and socket FDs) are managed in parallel arrays indexed identically to the `pollfd` array. This stylistic choice guarantees $O(1)$ lookups for the active client context during the `recv()` loop, separating connection state from protocol logic.
+* **Concurrency model:** `poll` event loop chosen because it monitors up to 100 client file descriptors simultaneously in a single thread. This avoids the heavy context-switching overhead of `fork()` processes and eliminates the race conditions and complex mutex locking required by `pthreads` when managing shared state arrays.
 
-* **Protocol Framing & Payload Handling:** To safely transmit binary `.txt` files containing arbitrary newlines, the `SENDFILE` protocol discards standard null-terminated string logic in favor of strict length-prefixed framing (e.g., `RECVFILE FROM user file.txt 1024\n<raw_bytes>`). 
+* **State Management:** Client usernames, symmetric keys, and socket FDs are managed in parallel arrays indexed identically to the `pollfd` array to guarantee $O(1)$ lookups during the `recv()` loop.
 
-* **Dynamic Buffer Allocation:** Instead of utilizing massive fixed-size stack arrays that risk stack overflow faults, the client and server dynamically allocate 1MB+ buffers on the heap (`malloc`) exclusively during I/O events that require handling heavy file payloads.
+* **Client-Side Command Interception:** The client executable pre-parses local commands (`HELP`, `SENDFILE`) before transmitting to the socket, reducing unnecessary network round-trips.
 
-* **Client-Side Command Interception:** The client executable pre-parses local commands (like `HELP` and file-read operations for `SENDFILE`) before transmitting to the socket. This structural choice reduces unnecessary network round-trips and prevents server-side bottlenecking on invalid local commands.
-
-* **Broadcast Routing (`SEND ALL`):** Added a custom broadcast feature that isolates the sender's socket and loops through the active `pollfd` array to dispatch room-wide messages, acting as a secondary routing layer separate from the targeted `SEND TO` command.
+## Known Limitations
+* Because encryption is hop-by-hop, a compromised server would expose all plaintext communications.
+* The 1MB file transfer limit means large files will be explicitly rejected by the server rather than chunked.
+* The server relies on a centralized architecture; if the main server process terminates, all client connections are dropped simultaneously.
