@@ -25,3 +25,20 @@ struct sockaddr_in* createAddress(char* ip, int port) {
     
     return address;
 }
+
+//accept incoming connections
+struct AcceptedSocket* acceptConnections(int serverSocketFD) {
+    struct sockaddr_in clientAddress;
+    socklen_t clientAddressLength = sizeof(clientAddress);
+    int clientSocketFD = accept(serverSocketFD, (struct sockaddr *)&clientAddress, &clientAddressLength);
+
+    struct AcceptedSocket* acceptedSocket = malloc(sizeof(struct AcceptedSocket));
+    acceptedSocket->address = clientAddress;
+    acceptedSocket->acceptedSocketFD = clientSocketFD;
+    acceptedSocket->acceptedSuccessfully = clientSocketFD > 0;
+
+    if (!acceptedSocket->acceptedSuccessfully)
+        acceptedSocket->error = clientSocketFD;
+
+    return acceptedSocket;
+}

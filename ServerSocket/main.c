@@ -25,24 +25,23 @@ int main() {
     /*listen for incoming connections*/
     int listenFD = listen(serverSocketFD, 10);
 
-    /*accept a connection*/
-    struct sockaddr_in clientAddress;
-    socklen_t clientAddressLength = sizeof(clientAddress);
-    int clientSocketFD = accept(serverSocketFD, (struct sockaddr *)&clientAddress, &clientAddressLength);
+    /*accept multiple connections in multiple threads*/
+    struct AcceptedSocket* clientSocket = acceptConnections(serverSocketFD);
+
 
     char buffer[1024];
     while (1) {
-        int n = recv(clientSocketFD, buffer, 1023, 0);
+        int n = recv(clientSocket->acceptedSocketFD, buffer, 1023, 0);
         if(n > 0) {
             buffer[n] = '\0';
-            printf("Request was: %s\n", buffer);
+            printf("Message was: %s\n", buffer);
         }
         else break;
     }
 
 
     close(serverSocketFD);
-    close(clientSocketFD);
+    close(clientSocket->acceptedSocketFD);
 
     return 0;
 }
