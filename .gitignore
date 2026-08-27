@@ -4,3 +4,5 @@
 # Compiled executables
 server
 client
+
+build/
