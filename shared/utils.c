@@ -53,6 +53,159 @@ struct AcceptedSocket* acceptConnection(int serverSocketFD) {
 }
 
 
+//disconnect and clear client data
+void removeClient(int i, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    close(fds[i].fd);
+    fds[i].fd = -1; 
+    clientNames[i][0] = '\0';
+    clientKeys[i][0] = '\0';
+}
+
+//check if a username is already taken
+int isDuplicateUsername(char* username, struct pollfd fds[], char clientNames[][32]) {
+    for (int j = 1; j < 100; j++) {
+        if (fds[j].fd != -1 && strcmp(clientNames[j], username) == 0) {
+            return 1; //found a match
+        }
+    }
+    return 0; //no duplicate
+}
+
+//find socket index by username (returns -1 if offline)
+int findClientIndex(char* targetName, struct pollfd fds[], char clientNames[][32]) {
+    for (int j = 1; j < 100; j++) {
+        if (fds[j].fd != -1 && strcmp(clientNames[j], targetName) == 0) {
+            return j;
+        }
+    }
+    return -1;
+}
+
+//process new connection on server socket
+void handleNewConnection(int serverSocketFD, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    struct AcceptedSocket* clientSocket = acceptConnection(serverSocketFD);
+    
+    if (clientSocket->acceptedSuccessfully) {
+        printf("[SERVER LOG] New socket connection established (FD: %d)\n", clientSocket->acceptedSocketFD);
+        fflush(stdout);
+        
+        //find an empty slot in array to put the new client in
+        for (int i = 1; i < 100; i++) {
+            if (fds[i].fd == -1) {
+                fds[i].fd = clientSocket->acceptedSocketFD;
+                clientNames[i][0] = '\0'; 
+                clientKeys[i][0] = '\0'; 
+                break;
+            }
+        }
+    }
+    free(clientSocket); 
+}
+
+//process registration handshake
+void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    char parsedName[32];
+    char parsedKey[32];
+
+    if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
+        if (isDuplicateUsername(parsedName, fds, clientNames)) {
+            char errMsg[100];
+            snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
+            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        } 
+        else {
+            strcpy(clientNames[i], parsedName);
+            strcpy(clientKeys[i], parsedKey);
+            
+            char successMsg[100];
+            snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
+            send(fds[i].fd, successMsg, strlen(successMsg), 0);
+            
+            printf("[SERVER LOG] %s registered successfully with key %s\n", clientNames[i], clientKeys[i]);
+            fflush(stdout);
+        }
+    } 
+    else {
+        char *errMsg = "ERROR invalid command format\n";
+        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+    }
+}
+
+//process QUIT command
+void handleQuit(int i, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    char goodbyeMsg[100];
+    snprintf(goodbyeMsg, sizeof(goodbyeMsg), "GOODBYE %s\n", clientNames[i]);
+    send(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), 0);
+    
+    printf("[SERVER LOG] %s issued QUIT command. Disconnecting.\n", clientNames[i]);
+    fflush(stdout);
+    
+    removeClient(i, fds, clientNames, clientKeys);
+}
+
+//process targeted SEND TO command
+void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd fds[], char clientNames[][32]) {
+    int targetIndex = findClientIndex(targetName, fds, clientNames);
+    
+    if (targetIndex != -1) {
+        char routedMsg[1100];
+        snprintf(routedMsg, sizeof(routedMsg), "FROM %s: %s\n", clientNames[i], messageContent);
+        send(fds[targetIndex].fd, routedMsg, strlen(routedMsg), 0);
+        
+        printf("[SERVER LOG] Routed message from %s to %s\n", clientNames[i], targetName);
+        fflush(stdout);
+    } 
+    else {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
+        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        
+        printf("[SERVER LOG] %s attempted to message offline user %s\n", clientNames[i], targetName);
+        fflush(stdout);
+    }
+}
+
+//process broadcast SEND ALL command
+void handleSendAll(int i, char* messageContent, struct pollfd fds[], char clientNames[][32]) {
+    char broadcastMsg[1100];
+    snprintf(broadcastMsg, sizeof(broadcastMsg), "BROADCAST FROM %s: %s\n", clientNames[i], messageContent);
+    
+    //loop through everyone and send it out
+    for (int j = 1; j < 100; j++) {
+        //send if slot is active and it's not the sender
+        if (fds[j].fd != -1 && j != i) {
+            send(fds[j].fd, broadcastMsg, strlen(broadcastMsg), 0);
+        }
+    }
+    
+    printf("[SERVER LOG] %s broadcasted a message to everyone\n", clientNames[i]);
+    fflush(stdout);
+}
+
+//route active chat commands
+void handleChatCommand(int i, char* buffer, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
+    char targetName[32];
+    char messageContent[1024];
+
+    if (strcmp(buffer, "QUIT") == 0) {
+        handleQuit(i, fds, clientNames, clientKeys);
+    }
+    else if (sscanf(buffer, "SEND TO %31[^:]: %[^\n]", targetName, messageContent) == 2) {
+        handleSendTo(i, targetName, messageContent, fds, clientNames);
+    }
+    else if (sscanf(buffer, "SEND ALL: %[^\n]", messageContent) == 1) {
+        handleSendAll(i, messageContent, fds, clientNames);
+    }
+    else {
+        //for bad typing/garbage bytes
+        char *errMsg = "ERROR invalid command format\n";
+        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        
+        printf("[SERVER LOG] Rejected malformed input from %s: %s\n", clientNames[i], buffer);
+        fflush(stdout);
+    }
+}
+
 //start accepting incoming connections concurrently using poll()
 void startConnections(int serverSocketFD) {
     //create a radar board that can hold up to 100 clients
@@ -83,23 +236,7 @@ void startConnections(int serverSocketFD) {
 
         //main server socket flashed (new connection)
         if (fds[0].revents & POLLIN) {
-            struct AcceptedSocket* clientSocket = acceptConnection(serverSocketFD);
-            
-            if (clientSocket->acceptedSuccessfully) {
-                printf("[SERVER LOG] New socket connection established (FD: %d)\n", clientSocket->acceptedSocketFD);
-                fflush(stdout);
-                
-                //find an empty slot in array to put the new client in
-                for (int i = 1; i < 100; i++) {
-                    if (fds[i].fd == -1) {
-                        fds[i].fd = clientSocket->acceptedSocketFD;
-                        clientNames[i][0] = '\0'; 
-                        clientKeys[i][0] = '\0'; 
-                        break;
-                    }
-                }
-            }
-            free(clientSocket); 
+            handleNewConnection(serverSocketFD, fds, clientNames, clientKeys);
         }
 
         //existing client socket flashed (new data)
@@ -113,127 +250,19 @@ void startConnections(int serverSocketFD) {
                     //client disconnected 
                     printf("[SERVER LOG] %s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
                     fflush(stdout);
-                    close(fds[i].fd);
-                    fds[i].fd = -1; 
-                    clientNames[i][0] = '\0';
-                    clientKeys[i][0] = '\0';
+                    removeClient(i, fds, clientNames, clientKeys);
                 } 
-                
                 else {
                     buffer[n] = '\0';
                     buffer[strcspn(buffer, "\r\n")] = '\0';
 
                     if (clientNames[i][0] == '\0') {
                         //name empty means they need to register
-                        char parsedName[32];
-                        char parsedKey[32];
-
-                        if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
-                            int duplicate = 0;
-                            for (int j = 1; j < 100; j++) {
-                                if (fds[j].fd != -1 && strcmp(clientNames[j], parsedName) == 0) {
-                                    duplicate = 1;
-                                    break;
-                                }
-                            }
-
-                            if (duplicate) {
-                                char errMsg[100];
-                                snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
-                                send(fds[i].fd, errMsg, strlen(errMsg), 0);
-                            } 
-                            else {
-                                strcpy(clientNames[i], parsedName);
-                                strcpy(clientKeys[i], parsedKey);
-                                
-                                char successMsg[100];
-                                snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
-                                send(fds[i].fd, successMsg, strlen(successMsg), 0);
-                                
-                                printf("[SERVER LOG] %s registered successfully with key %s\n", clientNames[i], clientKeys[i]);
-                                fflush(stdout);
-                            }
-                        } 
-                        else {
-                            char *errMsg = "ERROR invalid command format\n";
-                            send(fds[i].fd, errMsg, strlen(errMsg), 0);
-                        }
+                        handleRegistration(i, buffer, fds, clientNames, clientKeys);
                     } 
-
                     else {
                         //targeted message routing
-                        char targetName[32];
-                        char messageContent[1024];
-
-                        //check for QUIT ommand
-                        if (strcmp(buffer, "QUIT") == 0) {
-                            char goodbyeMsg[100];
-                            snprintf(goodbyeMsg, sizeof(goodbyeMsg), "GOODBYE %s\n", clientNames[i]);
-                            send(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), 0);
-                            
-                            printf("[SERVER LOG] %s issued QUIT command. Disconnecting.\n", clientNames[i]);
-                            fflush(stdout);
-                            
-                            close(fds[i].fd);
-                            fds[i].fd = -1; 
-                            clientNames[i][0] = '\0';
-                            clientKeys[i][0] = '\0';
-                        }
-                        //parse targeted SEND TO <username>: <message>
-                        else if (sscanf(buffer, "SEND TO %31[^:]: %[^\n]", targetName, messageContent) == 2) {
-                            int found = 0;
-                            
-                            //search radar board for the target client
-                            for (int j = 1; j < 100; j++) {
-                                if (fds[j].fd != -1 && strcmp(clientNames[j], targetName) == 0) {
-                                    char routedMsg[1100];
-                                    snprintf(routedMsg, sizeof(routedMsg), "FROM %s: %s\n", clientNames[i], messageContent);
-                                    send(fds[j].fd, routedMsg, strlen(routedMsg), 0);
-                                    
-                                    printf("[SERVER LOG] Routed message from %s to %s\n", clientNames[i], targetName);
-                                    fflush(stdout);
-                                    
-                                    found = 1;
-                                    break;
-                                }
-                            }
-                            
-                            //target user was not in array
-                            if (!found) {
-                                char errMsg[100];
-                                snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
-                                send(fds[i].fd, errMsg, strlen(errMsg), 0);
-                                
-                                printf("[SERVER LOG] %s attempted to message offline user %s\n", clientNames[i], targetName);
-                                fflush(stdout);
-                            }
-                        }
-
-                        //parse broadcast SEND ALL: <message>
-                        else if (sscanf(buffer, "SEND ALL: %[^\n]", messageContent) == 1) {
-                            char broadcastMsg[1100];
-                            snprintf(broadcastMsg, sizeof(broadcastMsg), "BROADCAST FROM %s: %s\n", clientNames[i], messageContent);
-                            
-                            //loop through everyone and send it out
-                            for (int j = 1; j < 100; j++) {
-                                //send if slot is active and it's not the sender
-                                if (fds[j].fd != -1 && j != i) {
-                                    send(fds[j].fd, broadcastMsg, strlen(broadcastMsg), 0);
-                                }
-                            }
-                            
-                            printf("[SERVER LOG] %s broadcasted a message to everyone\n", clientNames[i]);
-                            fflush(stdout);
-                        }
-
-                        else {
-                            //for bad typing/garbage bytes
-                            char *errMsg = "ERROR invalid command format\n";
-                            send(fds[i].fd, errMsg, strlen(errMsg), 0);
-                            
-                            printf("[SERVER LOG] Rejected malformed input from %s: %s\n", clientNames[i], buffer);
-                            fflush(stdout);
-                        }
+                        handleChatCommand(i, buffer, fds, clientNames, clientKeys);
                     }
                 }
             }
