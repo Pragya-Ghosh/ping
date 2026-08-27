@@ -3,5 +3,6 @@ SEND TO <username>: <message>   - Send a private message
 SEND ALL: <message>             - Broadcast to everyone
 SENDFILE TO <username>: <file>  - Send a .txt file (max 1MB)
 LIST                            - Show online users
+HELP                            - Show this menu
 QUIT                            - Disconnect and exit
 --------------------------

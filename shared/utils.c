@@ -499,13 +499,20 @@ void runClientLoop(int clientSocketFD) {
             
             ssize_t charCount = getline(&line, &lineSize, stdin);
             if(charCount > 0) {
+                //check for disconnect commands
                 if(strcmp(line, "exit\n") == 0 || strcmp(line, "QUIT\n") == 0) {
                     send(clientSocketFD, "QUIT", 4, 0); 
                     free(line); 
                     break;
                 }
-                
-                processClientInput(clientSocketFD, line, charCount);
+                //check for local HELP command
+                else if (strcmp(line, "HELP\n") == 0) {
+                    printHelpMenu("../ClientSocket/protocols.txt");
+                }
+                //process normal chat or file transfers
+                else {
+                    processClientInput(clientSocketFD, line, charCount);
+                }
             }
             free(line); 
         }
