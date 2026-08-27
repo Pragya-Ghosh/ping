@@ -1,4 +1,13 @@
-# Ping! A Secure Chat Application.
+# Team Ping! Secure Chat Application
+
+```text
+  ____  _             !
+ |  _ \(_)_ __   __ _ 
+ | |_) | | '_ \ / _` |
+ |  __/| | | | | (_| |
+ |_|   |_|_| |_|\__, |
+                |___/
+                
 **Ping!** is a lightweight, concurrent command-line chat application written in standard C. Designed for secure, low-latency communication over TCP, it features a custom application-layer protocol that handles user authentication, targeted real-time messaging, room-wide broadcasting, and local file transfers. The system employs a centralized server architecture that multiplexes up to 100 simultaneous client connections, utilizing hop-by-hop symmetric encryption to ensure zero plaintext data traverses the network.
 
 ## Group Members
@@ -33,3 +42,10 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 * Because encryption is hop-by-hop, a compromised server would expose all plaintext communications.
 * The 1MB file transfer limit means large files will be explicitly rejected by the server rather than chunked.
 * The server relies on a centralized architecture; if the main server process terminates, all client connections are dropped simultaneously.
+
+## UI & Terminal Aesthetics
+To enhance readability and provide clear visual feedback in the command-line interface, the application utilizes standard ANSI escape codes for local terminal output. 
+* **Red (`\x1b[31m`):** Used for critical failures, bad input warnings, server disconnections, and error states.
+* **Green (`\x1b[32m`):** Highlights successful operations, such as completing the registration handshake or successfully downloading a file payload.
+* **Yellow (`\x1b[33m`):** Denotes local system alerts, local terminal prompts, and non-critical server events like client disconnects.
+* **Cyan (`\x1b[36m`):** Used for standard system branding (ASCII startup banner), UI menus, and routing logs.
