@@ -1,0 +1,6 @@
+# Compiled object files
+*.o
+
+# Compiled executables
+server
+client
