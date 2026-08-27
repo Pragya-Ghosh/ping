@@ -9,6 +9,14 @@
 
 #include "utils.h" 
 
+// --- ANSI COLOR MACROS ---
+#define COLOR_RED     "\x1b[31m"
+#define COLOR_GREEN   "\x1b[32m"
+#define COLOR_YELLOW  "\x1b[33m"
+#define COLOR_CYAN    "\x1b[36m"
+#define COLOR_RESET   "\x1b[0m"
+// -------------------------
+
 //create TCP socket: IPv4, TCP, default protocol
 int createSocket() {
     int socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -86,7 +94,7 @@ void handleNewConnection(int serverSocketFD, struct pollfd fds[], char clientNam
     struct AcceptedSocket* clientSocket = acceptConnection(serverSocketFD);
     
     if (clientSocket->acceptedSuccessfully) {
-        printf("[SERVER LOG] New socket connection established (FD: %d)\n", clientSocket->acceptedSocketFD);
+        printf(COLOR_CYAN "[SERVER LOG] New socket connection established (FD: %d)\n" COLOR_RESET, clientSocket->acceptedSocketFD);
         fflush(stdout);
         
         //find an empty slot in array to put the new client in
@@ -121,7 +129,7 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
             snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
             send(fds[i].fd, successMsg, strlen(successMsg), 0);
             
-            printf("[SERVER LOG] %s registered successfully with key %s\n", clientNames[i], clientKeys[i]);
+            printf(COLOR_GREEN "[SERVER LOG] %s registered successfully with key %s\n" COLOR_RESET, clientNames[i], clientKeys[i]);
             fflush(stdout);
         }
     } 
@@ -137,7 +145,7 @@ void handleQuit(int i, struct pollfd fds[], char clientNames[][32], char clientK
     snprintf(goodbyeMsg, sizeof(goodbyeMsg), "GOODBYE %s\n", clientNames[i]);
     send(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), 0);
     
-    printf("[SERVER LOG] %s issued QUIT command. Disconnecting.\n", clientNames[i]);
+    printf(COLOR_YELLOW "[SERVER LOG] %s issued QUIT command. Disconnecting.\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
     
     removeClient(i, fds, clientNames, clientKeys);
@@ -152,7 +160,7 @@ void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd f
         snprintf(routedMsg, sizeof(routedMsg), "FROM %s: %s\n", clientNames[i], messageContent);
         send(fds[targetIndex].fd, routedMsg, strlen(routedMsg), 0);
         
-        printf("[SERVER LOG] Routed message from %s to %s\n", clientNames[i], targetName);
+        printf(COLOR_CYAN "[SERVER LOG] Routed message from %s to %s\n" COLOR_RESET, clientNames[i], targetName);
         fflush(stdout);
     } 
     else {
@@ -160,7 +168,7 @@ void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd f
         snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
         send(fds[i].fd, errMsg, strlen(errMsg), 0);
         
-        printf("[SERVER LOG] %s attempted to message offline user %s\n", clientNames[i], targetName);
+        printf(COLOR_RED "[SERVER LOG] %s attempted to message offline user %s\n" COLOR_RESET, clientNames[i], targetName);
         fflush(stdout);
     }
 }
@@ -178,7 +186,7 @@ void handleSendAll(int i, char* messageContent, struct pollfd fds[], char client
         }
     }
     
-    printf("[SERVER LOG] %s broadcasted a message to everyone\n", clientNames[i]);
+    printf(COLOR_CYAN "[SERVER LOG] %s broadcasted a message to everyone\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
 }
 
@@ -196,7 +204,7 @@ void handleList(int i, struct pollfd fds[], char clientNames[][32]) {
     strcat(listMsg, "\n");
     send(fds[i].fd, listMsg, strlen(listMsg), 0);
     
-    printf("[SERVER LOG] Sent online user list to %s\n", clientNames[i]);
+    printf(COLOR_CYAN "[SERVER LOG] Sent online user list to %s\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
 }
 
@@ -247,7 +255,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             send(fds[targetIndex].fd, header, hLen, 0);
             send(fds[targetIndex].fd, payload, actualPayloadBytes, 0);
             
-            printf("[SERVER LOG] Routed file %s (%d bytes) from %s to %s\n", filename, fileSize, clientNames[i], targetName);
+            printf(COLOR_CYAN "[SERVER LOG] Routed file %s (%d bytes) from %s to %s\n" COLOR_RESET, filename, fileSize, clientNames[i], targetName);
             fflush(stdout);
         } 
         else {
@@ -290,7 +298,7 @@ void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char cli
     else {
         char *errMsg = "ERROR invalid command format\n";
         send(fds[i].fd, errMsg, strlen(errMsg), 0);
-        printf("[SERVER LOG] Rejected malformed input from %s\n", clientNames[i]);
+        printf(COLOR_RED "[SERVER LOG] Rejected malformed input from %s\n" COLOR_RESET, clientNames[i]);
         fflush(stdout);
     }
 }
@@ -309,7 +317,7 @@ void startConnections(int serverSocketFD) {
     }
 
     fds[0].fd = serverSocketFD;
-    printf("Ping! Server polling for connections on port 2000...\n");
+    printf(COLOR_YELLOW "Ping! Server polling for connections on port 2000...\n" COLOR_RESET);
     fflush(stdout);
 
     //allocate 1MB buffer on heap to handle file transfers without stack overflow
@@ -333,7 +341,7 @@ void startConnections(int serverSocketFD) {
                 int n = recv(fds[i].fd, buffer, 1048576 + 1023, 0);
 
                 if (n <= 0) {
-                    printf("[SERVER LOG] %s disconnected.\n", clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
+                    printf(COLOR_YELLOW "[SERVER LOG] %s disconnected.\n" COLOR_RESET, clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
                     fflush(stdout);
                     removeClient(i, fds, clientNames, clientKeys);
                 } 
@@ -364,11 +372,11 @@ void sendUsername(int clientSocketFD) {
     char response[1024];
     
     while (1) {
-        printf("Enter your username: ");
+        printf(COLOR_CYAN "Enter your username: " COLOR_RESET);
         fgets(username, sizeof(username), stdin);
         username[strcspn(username, "\n")] = '\0'; 
 
-        printf("Enter your encryption key: ");
+        printf(COLOR_CYAN "Enter your encryption key: " COLOR_RESET);
         fgets(key, sizeof(key), stdin);
         key[strcspn(key, "\n")] = '\0';
 
@@ -380,7 +388,13 @@ void sendUsername(int clientSocketFD) {
         int n = recv(clientSocketFD, response, sizeof(response) - 1, 0);
         if (n > 0) {
             response[n] = '\0';
-            printf("server$ %s\n", response);
+            
+            //if it starts with ERROR, print red. Otherwise, green/yellow.
+            if (strncmp(response, "ERROR", 5) == 0) {
+                printf(COLOR_RED "server$ %s\n" COLOR_RESET, response);
+            } else {
+                printf(COLOR_GREEN "server$ %s\n" COLOR_RESET, response);
+            }
             
             //if successful, break out of loop and enter the chat
             if (strncmp(response, "REGISTERED", 10) == 0) {
@@ -388,7 +402,7 @@ void sendUsername(int clientSocketFD) {
             }
         } 
         else {
-            printf("Server disconnected.\n");
+            printf(COLOR_RED "Server disconnected.\n" COLOR_RESET);
             exit(1);
         }
     }
@@ -405,7 +419,7 @@ void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
         if (sscanf(line, "SENDFILE TO %31[^:]: %255s", targetName, filename) == 2) {
             FILE *f = fopen(filename, "rb");
             if (!f) {
-                printf("server$ ERROR file not found: %s\n", filename);
+                printf(COLOR_RED "server$ ERROR file not found: %s\n" COLOR_RESET, filename);
             } 
             else {
                 fseek(f, 0, SEEK_END);
@@ -413,7 +427,7 @@ void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
                 fseek(f, 0, SEEK_SET);
                 
                 if (fsize > 1048576) {
-                    printf("server$ ERROR file exceeds 1MB limit\n");
+                    printf(COLOR_RED "server$ ERROR file exceeds 1MB limit\n" COLOR_RESET);
                 } 
                 else {
                     char *fileBuf = malloc(fsize + 1024);
@@ -427,7 +441,7 @@ void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
             }
         } 
         else {
-            printf("client$ ERROR invalid format. Use: SENDFILE TO user: filename.txt\n");
+            printf(COLOR_RED "client$ ERROR invalid format. Use: SENDFILE TO user: filename.txt\n" COLOR_RESET);
         }
     } 
     else {
@@ -458,17 +472,21 @@ void processServerMessage(char* buffer, int n) {
                 if (out) {
                     fwrite(payload, 1, fsize, out);
                     fclose(out);
-                    printf("RECVFILE FROM %s: %s (%d bytes)\n[content saved to ./%s]\n", sender, filename, fsize, outName);
+                    printf(COLOR_GREEN "RECVFILE FROM %s: %s (%d bytes)\n[content saved to ./%s]\n" COLOR_RESET, sender, filename, fsize, outName);
                 } 
                 else {
-                    printf("client$ ERROR could not write file %s\n", outName);
+                    printf(COLOR_RED "client$ ERROR could not write file %s\n" COLOR_RESET, outName);
                 }
             }
         }
     } 
     else {
-        //normal server text message
-        printf("%s", buffer);
+        //normal server text message (left uncolored so chat stands out)
+        if (strncmp(buffer, "ERROR", 5) == 0) {
+            printf(COLOR_RED "%s" COLOR_RESET "\n", buffer);
+        } else {
+            printf("%s", buffer);
+        }
     }
 }
 
@@ -522,7 +540,7 @@ void runClientLoop(int clientSocketFD) {
             int n = recv(clientSocketFD, serverBuffer, 1048576 + 1023, 0);
             
             if (n <= 0) {
-                printf("\nServer closed the connection.\n");
+                printf(COLOR_RED "\nServer closed the connection.\n" COLOR_RESET);
                 break;
             } 
             else {
@@ -533,25 +551,40 @@ void runClientLoop(int clientSocketFD) {
     free(serverBuffer);
 }
 
-
-
 //read and print the available chat commands from a text file
 void printHelpMenu(const char* filepath) {
     FILE *file = fopen(filepath, "r");
     
     if (file == NULL) {
         //fallback if the text file is missing or path is wrong
-        printf("Type 'QUIT' to leave, or 'LIST' to see online users.\n");
+        printf(COLOR_CYAN "Type 'QUIT' to leave, or 'LIST' to see online users.\n" COLOR_RESET);
         return;
     }
 
     char line[256];
-    printf("\n");
+    printf(COLOR_CYAN "\n");
     while (fgets(line, sizeof(line), file)) {
         printf("%s", line);
     }
-    printf("\n");
+    printf(COLOR_RESET "\n");
     
     fclose(file);
 }
 
+//read and print the ASCII banner from a text file
+void printBanner(const char* filepath) {
+    FILE *file = fopen(filepath, "r");
+    
+    if (file == NULL) 
+        return;
+    
+    char line[256];
+    printf(COLOR_CYAN);
+    
+    while (fgets(line, sizeof(line), file)) {
+        printf("%s", line);
+    }
+    
+    printf(COLOR_RESET "\n");
+    fclose(file);
+}
