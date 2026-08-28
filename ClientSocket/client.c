@@ -16,11 +16,11 @@ void sendUsername(int clientSocketFD, char* activeKey) {
     char response[1024];
     
     while (1) {
-        printf(COLOR_CYAN "Enter your username: " COLOR_RESET);
+        printf("Enter your username: ");
         fgets(username, sizeof(username), stdin);
         username[strcspn(username, "\n")] = '\0'; 
 
-        printf(COLOR_CYAN "Enter your encryption key: " COLOR_RESET);
+        printf("Enter your encryption key: ");
         fgets(activeKey, 32, stdin);
         activeKey[strcspn(activeKey, "\n")] = '\0';
 
@@ -39,18 +39,18 @@ void sendUsername(int clientSocketFD, char* activeKey) {
             applyXOR(response, n, activeKey);
             response[n] = '\0';
             
-            //if it starts with ERROR, print red; otherwise, green/yellow
+            //if it starts with ERROR, print red; otherwise, default color with reset
             if (strncmp(response, "ERROR", 5) == 0) 
-                printf(COLOR_RED "server$ %s\n" COLOR_RESET, response);
+                printf(COLOR_RED "server$ %s" COLOR_RESET "\n", response);
             else 
-                printf(COLOR_GREEN "server$ %s\n" COLOR_RESET, response);
+                printf(COLOR_GREEN "server$ %s" COLOR_RESET "\n", response);
             
             //if successful, break out of loop and enter the chat
             if (strncmp(response, "REGISTERED", 10) == 0) 
                 break; 
         } 
         else {
-            printf(COLOR_RED "Server disconnected.\n" COLOR_RESET);
+            printf(COLOR_RED "Server disconnected\n" COLOR_RESET);
             exit(1);
         }
     }
@@ -123,7 +123,7 @@ void processServerMessage(char* buffer, int n) {
 
                 char outName[256];
                 snprintf(outName, sizeof(outName), "received_%s", base_name);
-                
+
                 
                 FILE *out = fopen(outName, "wb");
                 if (out) {
@@ -139,11 +139,10 @@ void processServerMessage(char* buffer, int n) {
     } 
     else {
         //normal server text message 
-        if (strncmp(buffer, "ERROR", 5) == 0) {
+        if (strncmp(buffer, "ERROR", 5) == 0) 
             printf(COLOR_RED "%s" COLOR_RESET "\n", buffer);
-        } else {
+        else 
             printf("%s", buffer);
-        }
     }
 }
 
