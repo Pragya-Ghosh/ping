@@ -213,8 +213,13 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             int hLen = snprintf(header, sizeof(header), "RECVFILE FROM %s %s %d\n", clientNames[i], filename, fileSize);
             
             //forward header and raw payload securely
-            secureSend(fds[targetIndex].fd, header, hLen, clientKeys[targetIndex]);
-            secureSend(fds[targetIndex].fd, payload, actualPayloadBytes, clientKeys[targetIndex]);
+            //stitch header and payload together before encrypting
+            char* combinedBuffer = malloc(hLen + actualPayloadBytes);
+            memcpy(combinedBuffer, header, hLen);
+            memcpy(combinedBuffer + hLen, payload, actualPayloadBytes);
+            
+            secureSend(fds[targetIndex].fd, combinedBuffer, hLen + actualPayloadBytes, clientKeys[targetIndex]);
+            free(combinedBuffer);
             
             printf(COLOR_CYAN "[SERVER LOG] Routed file %s (%d bytes) from %s to %s\n" COLOR_RESET, filename, fileSize, clientNames[i], targetName);
             fflush(stdout);
