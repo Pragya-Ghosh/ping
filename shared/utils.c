@@ -135,7 +135,7 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
             snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
             secureSend(fds[i].fd, successMsg, strlen(successMsg), clientKeys[i]);
             
-            printf(COLOR_GREEN "[SERVER LOG] %s registered successfully with key %s\n" COLOR_RESET, clientNames[i], clientKeys[i]);
+            printf(COLOR_GREEN "[SERVER LOG] %s registered successfully\n" COLOR_RESET, clientNames[i]);
             fflush(stdout);
         }
     } 
@@ -151,7 +151,7 @@ void handleQuit(int i, struct pollfd fds[], char clientNames[][32], char clientK
     snprintf(goodbyeMsg, sizeof(goodbyeMsg), "GOODBYE %s\n", clientNames[i]);
     secureSend(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), clientKeys[i]);
     
-    printf(COLOR_YELLOW "[SERVER LOG] %s issued QUIT command. Disconnecting.\n" COLOR_RESET, clientNames[i]);
+    printf(COLOR_YELLOW "[SERVER LOG] %s disconnected.\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
     
     removeClient(i, fds, clientNames, clientKeys);
@@ -174,7 +174,7 @@ void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd f
         snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
         secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         
-        printf(COLOR_RED "[SERVER LOG] %s attempted to message offline user %s\n" COLOR_RESET, clientNames[i], targetName);
+        printf(COLOR_RED "[SERVER LOG] Failed route: %s is offline\n" COLOR_RESET, targetName);
         fflush(stdout);
     }
 }
@@ -192,7 +192,7 @@ void handleSendAll(int i, char* messageContent, struct pollfd fds[], char client
         }
     }
     
-    printf(COLOR_CYAN "[SERVER LOG] %s broadcasted a message to everyone\n" COLOR_RESET, clientNames[i]);
+    printf(COLOR_CYAN "[SERVER LOG] Broadcast dispatched from %s\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
 }
 
@@ -209,9 +209,6 @@ void handleList(int i, struct pollfd fds[], char clientNames[][32], char clientK
     }
     strcat(listMsg, "\n");
     secureSend(fds[i].fd, listMsg, strlen(listMsg), clientKeys[i]);
-    
-    printf(COLOR_CYAN "[SERVER LOG] Sent online user list to %s\n" COLOR_RESET, clientNames[i]);
-    fflush(stdout);
 }
 
 //process SENDFILE command
@@ -303,14 +300,14 @@ void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char cli
         //catches badly formatted known commands
         char errMsg[] = "ERROR invalid command format\n";
         secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
-        printf(COLOR_RED "[SERVER LOG] Rejected malformed command from %s\n" COLOR_RESET, clientNames[i]);
+        printf(COLOR_RED "[SERVER LOG] Malformed command rejected from %s\n" COLOR_RESET, clientNames[i]);
         fflush(stdout);
     }
     else {
         //catches completely unrecognizable commands
         char errMsg[] = "ERROR unknown command\n";
         secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
-        printf(COLOR_RED "[SERVER LOG] Rejected unknown command from %s\n" COLOR_RESET, clientNames[i]);
+        printf(COLOR_RED "[SERVER LOG] Unknown command rejected from %s\n" COLOR_RESET, clientNames[i]);
         fflush(stdout);
     }
 }
@@ -353,13 +350,15 @@ void startConnections(int serverSocketFD) {
                 int n = recv(fds[i].fd, buffer, 1048576 + 1023, 0);
 
                 if (n <= 0) {
-                    printf(COLOR_YELLOW "[SERVER LOG] %s disconnected.\n" COLOR_RESET, clientNames[i][0] != '\0' ? clientNames[i] : "Unknown client");
-                    fflush(stdout);
+                    if (clientNames[i][0] != '\0') {
+                        printf(COLOR_YELLOW "[SERVER LOG] %s disconnected.\n" COLOR_RESET, clientNames[i]);
+                        fflush(stdout);
+                    }
                     removeClient(i, fds, clientNames, clientKeys);
                 } 
                 else {
                     if (clientNames[i][0] == '\0') {
-                        //deduce key if registration is encrypted (The Registration Paradox)
+                        //deduce key if registration is encrypted 
                         if (strncmp(buffer, "REGISTER ", 9) != 0) {
                             char tempDecrypted[1024];
                             
@@ -436,7 +435,7 @@ void sendUsername(int clientSocketFD, char* activeKey) {
             applyXOR(response, n, activeKey);
             response[n] = '\0';
             
-            //if it starts with ERROR, print red. Otherwise, green/yellow.
+            //if it starts with ERROR, print red; otherwise, green/yellow
             if (strncmp(response, "ERROR", 5) == 0) 
                 printf(COLOR_RED "server$ %s\n" COLOR_RESET, response);
             else 
@@ -530,7 +529,7 @@ void processServerMessage(char* buffer, int n) {
         }
     } 
     else {
-        //normal server text message (left uncolored so chat stands out)
+        //normal server text message 
         if (strncmp(buffer, "ERROR", 5) == 0) {
             printf(COLOR_RED "%s" COLOR_RESET "\n", buffer);
         } else {
