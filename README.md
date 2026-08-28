@@ -11,8 +11,10 @@
 
 **Ping!** is a lightweight, concurrent command-line chat application written in C. Designed for secure, low-latency communication over TCP, it features a custom application-layer protocol that handles user authentication, targeted real-time messaging, room-wide broadcasting, and local file transfers. The system employs a centralized server architecture that multiplexes up to 100 simultaneous client connections, utilizing hop-by-hop symmetric encryption to ensure zero plaintext data traverses the network.
 
-## Group Members
-Pragya Ghosh (24051500)
+## Developer
+Pragya Ghosh\
+24051500\
+CSE-31
 
 ## How to Build
 This project uses CMake to ensure cross-platform compatibility and clean source directories.
@@ -21,8 +23,8 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 3. Compile the executables: `make`
 
 ## How to Run
-* Server: `./server` (Defaults to port 2000)
-* Client: `./client` (Connects to 127.0.0.1 on port 2000)
+* Server: `./server <port>` 
+* Client: `./client <server_ip> <port>` 
 
 ## Cipher Choice
 I chose the Repeating-Key XOR cipher over the Vigenère and Mini Substitution-Permutation options because it operates directly at the bitwise level, making it incredibly lightweight and efficient in C. Unlike Vigenère, which is traditionally restricted to alphabetical letters, XOR seamlessly works on arbitrary printable text, including the specific newline (\n) delimiter characters used in our protocol framing. Also, it avoids the complex block matrices of a Substitution-Permutation network, allowing us to encrypt large 1MB file buffers entirely in-place without allocating extra heap memory.
