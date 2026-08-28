@@ -10,18 +10,29 @@
 #include "../shared/utils.h"
 #include "client.h"
 
-int main() {
+int main(int argc, char *argv[]) {
+    
+    /*check command-line arguments*/
+    if (argc != 3) {
+        printf(COLOR_RED "Usage: %s <server_ip> <port>\n" COLOR_RESET, argv[0]);
+        return 1;
+    }
+
+    char* serverIP = argv[1];
+    int port = atoi(argv[2]);
+
     /*create the client socket*/
     int clientSocketFD = createSocket();
 
     /*connect to server*/
-    struct sockaddr_in* saddr = createAddress("127.0.0.1", 2000);
+    struct sockaddr_in* saddr = createAddress(serverIP, port);
     int connectFD = connect(clientSocketFD, (struct sockaddr*)saddr, sizeof(*saddr));
     
     if (connectFD == 0) {
-        printf(COLOR_GREEN "Connection to server was successful.\n" COLOR_RESET);
-    } else {
-        printf(COLOR_RED "Connection failed. Is the server running?\n" COLOR_RESET);
+        printf(COLOR_GREEN "Connection to server was successful :)\n" COLOR_RESET);
+    } 
+    else {
+        printf(COLOR_RED "Connection failed!\n" COLOR_RESET);
         free(saddr);
         return 1; 
     }

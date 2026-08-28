@@ -284,7 +284,7 @@ void startConnections(int serverSocketFD) {
     }
 
     fds[0].fd = serverSocketFD;
-    printf(COLOR_YELLOW "Ping! Server polling for connections on port 2000...\n" COLOR_RESET);
+    printf(COLOR_YELLOW "Ping! Server polling for connections...\n" COLOR_RESET);
     fflush(stdout);
 
     //Allocate 1MB buffers safely on the heap to prevent stack overflows
