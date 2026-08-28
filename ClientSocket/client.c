@@ -116,14 +116,20 @@ void processServerMessage(char* buffer, int n) {
             payload++;
             
             if (sscanf(buffer, "RECVFILE FROM %31s %127s %d", sender, filename, &fsize) == 3) {
+                
+                //strip any absolute paths sent 
+                char *base_name = strrchr(filename, '/');
+                base_name = base_name ? base_name + 1 : filename;
+
                 char outName[256];
-                snprintf(outName, sizeof(outName), "received_%s", filename);
+                snprintf(outName, sizeof(outName), "received_%s", base_name);
+                
                 
                 FILE *out = fopen(outName, "wb");
                 if (out) {
                     fwrite(payload, 1, fsize, out);
                     fclose(out);
-                    printf(COLOR_GREEN "RECVFILE FROM %s: %s (%d bytes)\n[content saved to ./%s]\n" COLOR_RESET, sender, filename, fsize, outName);
+                    printf(COLOR_GREEN "RECVFILE FROM %s: %s (%d bytes)\n[content saved to ./%s]\n" COLOR_RESET, sender, base_name, fsize, outName);
                 } 
                 else {
                     printf(COLOR_RED "client$ ERROR could not write file %s\n" COLOR_RESET, outName);

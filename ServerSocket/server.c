@@ -214,6 +214,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             
             //forward header and raw payload securely
             //stitch header and payload together before encrypting
+            //TCP is a stream protocol, so it glues these two consecutive sends into one continuous block over the network
             char* combinedBuffer = malloc(hLen + actualPayloadBytes);
             memcpy(combinedBuffer, header, hLen);
             memcpy(combinedBuffer + hLen, payload, actualPayloadBytes);
