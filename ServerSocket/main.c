@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "../shared/utils.h"
+#include "server.h"
 
 int main() {
     

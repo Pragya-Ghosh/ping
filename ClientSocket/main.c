@@ -8,6 +8,7 @@
 #include <poll.h>
 
 #include "../shared/utils.h"
+#include "client.h"
 
 int main() {
     /*create the client socket*/
