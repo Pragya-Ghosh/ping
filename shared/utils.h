@@ -21,8 +21,8 @@ int createSocket();
 struct sockaddr_in* createAddress(char* ip, int port);
 struct AcceptedSocket* acceptConnection(int serverSocketFD);
 void startConnections(int serverSocketFD);
-void sendUsername(int clientSocketFD);
-void runClientLoop(int clientSocketFD);
+void sendUsername(int clientSocketFD, char* activeKey);
+void runClientLoop(int clientSocketFD, const char* activeKey);
 void printHelpMenu(const char* filepath);
 void printBanner(const char* filepath);
 

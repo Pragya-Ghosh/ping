@@ -8,6 +8,7 @@
 #include <poll.h> 
 
 #include "utils.h" 
+#include "crypto.h"
 
 // --- ANSI COLOR MACROS ---
 #define COLOR_RED     "\x1b[31m"
@@ -17,11 +18,18 @@
 #define COLOR_RESET   "\x1b[0m"
 // -------------------------
 
+//encrypt payload, send to socket, and instantly decrypt back to plaintext in-memory
+void secureSend(int fd, char* data, int len, const char* key) {
+    applyXOR(data, len, key);   
+    send(fd, data, len, 0);     
+    applyXOR(data, len, key);   
+}
+
 //create TCP socket: IPv4, TCP, default protocol
 int createSocket() {
     int socketFD = socket(AF_INET, SOCK_STREAM, 0);
     
-    //Bypass the OS TIME_WAIT state to allow immediate port reuse
+    //bypass the OS TIME_WAIT state to allow immediate port reuse
     //ensures rapid server restarts during testing
     int opt = 1;
     setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -59,7 +67,6 @@ struct AcceptedSocket* acceptConnection(int serverSocketFD) {
 
     return acceptedSocket;
 }
-
 
 //disconnect and clear client data
 void removeClient(int i, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
@@ -117,9 +124,8 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
 
     if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
         if (isDuplicateUsername(parsedName, fds, clientNames)) {
-            char errMsg[100];
-            snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
-            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            char errMsg[] = "ERROR username already taken\n";
+            send(fds[i].fd, errMsg, strlen(errMsg), 0); //plaintext since key is rejected
         } 
         else {
             strcpy(clientNames[i], parsedName);
@@ -127,15 +133,15 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
             
             char successMsg[100];
             snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
-            send(fds[i].fd, successMsg, strlen(successMsg), 0);
+            secureSend(fds[i].fd, successMsg, strlen(successMsg), clientKeys[i]);
             
             printf(COLOR_GREEN "[SERVER LOG] %s registered successfully with key %s\n" COLOR_RESET, clientNames[i], clientKeys[i]);
             fflush(stdout);
         }
     } 
     else {
-        char *errMsg = "ERROR invalid command format\n";
-        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        char errMsg[] = "ERROR invalid command format\n";
+        send(fds[i].fd, errMsg, strlen(errMsg), 0); //plaintext on bad initial format
     }
 }
 
@@ -143,7 +149,7 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
 void handleQuit(int i, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char goodbyeMsg[100];
     snprintf(goodbyeMsg, sizeof(goodbyeMsg), "GOODBYE %s\n", clientNames[i]);
-    send(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), 0);
+    secureSend(fds[i].fd, goodbyeMsg, strlen(goodbyeMsg), clientKeys[i]);
     
     printf(COLOR_YELLOW "[SERVER LOG] %s issued QUIT command. Disconnecting.\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
@@ -152,13 +158,13 @@ void handleQuit(int i, struct pollfd fds[], char clientNames[][32], char clientK
 }
 
 //process targeted SEND TO command
-void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd fds[], char clientNames[][32]) {
+void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     int targetIndex = findClientIndex(targetName, fds, clientNames);
     
     if (targetIndex != -1) {
         char routedMsg[1100];
         snprintf(routedMsg, sizeof(routedMsg), "FROM %s: %s\n", clientNames[i], messageContent);
-        send(fds[targetIndex].fd, routedMsg, strlen(routedMsg), 0);
+        secureSend(fds[targetIndex].fd, routedMsg, strlen(routedMsg), clientKeys[targetIndex]);
         
         printf(COLOR_CYAN "[SERVER LOG] Routed message from %s to %s\n" COLOR_RESET, clientNames[i], targetName);
         fflush(stdout);
@@ -166,7 +172,7 @@ void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd f
     else {
         char errMsg[100];
         snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
-        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         
         printf(COLOR_RED "[SERVER LOG] %s attempted to message offline user %s\n" COLOR_RESET, clientNames[i], targetName);
         fflush(stdout);
@@ -174,7 +180,7 @@ void handleSendTo(int i, char* targetName, char* messageContent, struct pollfd f
 }
 
 //process broadcast SEND ALL command
-void handleSendAll(int i, char* messageContent, struct pollfd fds[], char clientNames[][32]) {
+void handleSendAll(int i, char* messageContent, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char broadcastMsg[1100];
     snprintf(broadcastMsg, sizeof(broadcastMsg), "BROADCAST FROM %s: %s\n", clientNames[i], messageContent);
     
@@ -182,7 +188,7 @@ void handleSendAll(int i, char* messageContent, struct pollfd fds[], char client
     for (int j = 1; j < 100; j++) {
         //send if slot is active and it's not the sender
         if (fds[j].fd != -1 && j != i) {
-            send(fds[j].fd, broadcastMsg, strlen(broadcastMsg), 0);
+            secureSend(fds[j].fd, broadcastMsg, strlen(broadcastMsg), clientKeys[j]);
         }
     }
     
@@ -191,7 +197,7 @@ void handleSendAll(int i, char* messageContent, struct pollfd fds[], char client
 }
 
 //process LIST command
-void handleList(int i, struct pollfd fds[], char clientNames[][32]) {
+void handleList(int i, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char listMsg[1024] = "ONLINE ";
     int first = 1;
     for (int j = 1; j < 100; j++) {
@@ -202,14 +208,14 @@ void handleList(int i, struct pollfd fds[], char clientNames[][32]) {
         }
     }
     strcat(listMsg, "\n");
-    send(fds[i].fd, listMsg, strlen(listMsg), 0);
+    secureSend(fds[i].fd, listMsg, strlen(listMsg), clientKeys[i]);
     
     printf(COLOR_CYAN "[SERVER LOG] Sent online user list to %s\n" COLOR_RESET, clientNames[i]);
     fflush(stdout);
 }
 
 //process SENDFILE command
-void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32]) {
+void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char targetName[32];
     char filename[128];
     int fileSize;
@@ -217,8 +223,8 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
     //find the newline that separates the protocol header from the file payload
     char* payload = strchr(buffer, '\n');
     if (!payload) {
-        char *errMsg = "ERROR invalid command format\n";
-        send(fds[i].fd, errMsg, strlen(errMsg), 0);
+        char errMsg[] = "ERROR invalid command format\n";
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         return;
     }
     
@@ -233,15 +239,15 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
         //check for valid .txt extension
         char* ext = strrchr(filename, '.');
         if (!ext || strcmp(ext, ".txt") != 0) {
-            char *errMsg = "ERROR only .txt files are supported\n";
-            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            char errMsg[] = "ERROR only .txt files are supported\n";
+            secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
             return;
         }
 
         //check size limit (1MB max)
         if (fileSize > 1048576) {
-            char *errMsg = "ERROR file exceeds 1MB limit\n";
-            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            char errMsg[] = "ERROR file exceeds 1MB limit\n";
+            secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
             return;
         }
 
@@ -251,9 +257,9 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             char header[256];
             int hLen = snprintf(header, sizeof(header), "RECVFILE FROM %s %s %d\n", clientNames[i], filename, fileSize);
             
-            //forward header and raw payload
-            send(fds[targetIndex].fd, header, hLen, 0);
-            send(fds[targetIndex].fd, payload, actualPayloadBytes, 0);
+            //forward header and raw payload securely
+            secureSend(fds[targetIndex].fd, header, hLen, clientKeys[targetIndex]);
+            secureSend(fds[targetIndex].fd, payload, actualPayloadBytes, clientKeys[targetIndex]);
             
             printf(COLOR_CYAN "[SERVER LOG] Routed file %s (%d bytes) from %s to %s\n" COLOR_RESET, filename, fileSize, clientNames[i], targetName);
             fflush(stdout);
@@ -261,7 +267,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
         else {
             char errMsg[100];
             snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
-            send(fds[i].fd, errMsg, strlen(errMsg), 0);
+            secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         }
     }
 }
@@ -271,7 +277,7 @@ void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char cli
     
     //sendfile payloads have raw bytes, so do not strip newlines
     if (strncmp(buffer, "SENDFILE TO ", 12) == 0) {
-        handleSendFile(i, buffer, n, fds, clientNames);
+        handleSendFile(i, buffer, n, fds, clientNames, clientKeys);
         return;
     }
 
@@ -285,20 +291,26 @@ void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char cli
         handleQuit(i, fds, clientNames, clientKeys);
 
     else if (strcmp(buffer, "LIST") == 0) 
-        handleList(i, fds, clientNames);
+        handleList(i, fds, clientNames, clientKeys);
 
     else if (sscanf(buffer, "SEND TO %31[^:]: %[^\n]", targetName, messageContent) == 2) 
-        handleSendTo(i, targetName, messageContent, fds, clientNames);
+        handleSendTo(i, targetName, messageContent, fds, clientNames, clientKeys);
     
-
     else if (sscanf(buffer, "SEND ALL: %[^\n]", messageContent) == 1) 
-        handleSendAll(i, messageContent, fds, clientNames);
+        handleSendAll(i, messageContent, fds, clientNames, clientKeys);
     
-
+    else if (strncmp(buffer, "SEND ", 5) == 0 || strncmp(buffer, "SENDFILE ", 9) == 0) {
+        //catches badly formatted known commands
+        char errMsg[] = "ERROR invalid command format\n";
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
+        printf(COLOR_RED "[SERVER LOG] Rejected malformed command from %s\n" COLOR_RESET, clientNames[i]);
+        fflush(stdout);
+    }
     else {
-        char *errMsg = "ERROR invalid command format\n";
-        send(fds[i].fd, errMsg, strlen(errMsg), 0);
-        printf(COLOR_RED "[SERVER LOG] Rejected malformed input from %s\n" COLOR_RESET, clientNames[i]);
+        //catches completely unrecognizable commands
+        char errMsg[] = "ERROR unknown command\n";
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
+        printf(COLOR_RED "[SERVER LOG] Rejected unknown command from %s\n" COLOR_RESET, clientNames[i]);
         fflush(stdout);
     }
 }
@@ -346,13 +358,43 @@ void startConnections(int serverSocketFD) {
                     removeClient(i, fds, clientNames, clientKeys);
                 } 
                 else {
-                    buffer[n] = '\0';
-
                     if (clientNames[i][0] == '\0') {
+                        //deduce key if registration is encrypted (The Registration Paradox)
+                        if (strncmp(buffer, "REGISTER ", 9) != 0) {
+                            char tempDecrypted[1024];
+                            
+                            //try all possible key lengths up to 9
+                            for (int kLen = 1; kLen <= 9; kLen++) {
+                                char testKey[32] = {0};
+                                
+                                for (int k = 0; k < kLen; k++) {
+                                    testKey[k] = buffer[k] ^ "REGISTER "[k];
+                                }
+                                testKey[kLen] = '\0';
+                                
+                                memcpy(tempDecrypted, buffer, n);
+                                applyXOR(tempDecrypted, n, testKey);
+                                tempDecrypted[n] = '\0';
+                                
+                                char pName[32], pKey[32];
+                                if (sscanf(tempDecrypted, "REGISTER %31s KEY %31s", pName, pKey) == 2) {
+                                    if (strcmp(pKey, testKey) == 0) {
+                                        memcpy(buffer, tempDecrypted, n); //restore plaintext
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        buffer[n] = '\0';
                         buffer[strcspn(buffer, "\r\n")] = '\0';
                         handleRegistration(i, buffer, fds, clientNames, clientKeys);
                     } 
                     else {
+                        //decrypt incoming data before parsing
+                        applyXOR(buffer, n, clientKeys[i]);
+                        buffer[n] = '\0';
+                        
                         //pass exact byte count 'n' for file handling
                         handleChatCommand(i, buffer, n, fds, clientNames, clientKeys);
                     }
@@ -365,9 +407,8 @@ void startConnections(int serverSocketFD) {
 
 
 //prompt client for username and key
-void sendUsername(int clientSocketFD) {
+void sendUsername(int clientSocketFD, char* activeKey) {
     char username[32];
-    char key[32];
     char payload[100];
     char response[1024];
     
@@ -377,29 +418,33 @@ void sendUsername(int clientSocketFD) {
         username[strcspn(username, "\n")] = '\0'; 
 
         printf(COLOR_CYAN "Enter your encryption key: " COLOR_RESET);
-        fgets(key, sizeof(key), stdin);
-        key[strcspn(key, "\n")] = '\0';
+        fgets(activeKey, 32, stdin);
+        activeKey[strcspn(activeKey, "\n")] = '\0';
 
-        //formatted input as per registration protocol: REGISTER <username> KEY <key>
-        snprintf(payload, sizeof(payload), "REGISTER %s KEY %s", username, key);
-        send(clientSocketFD, payload, strlen(payload), 0);
+        //formatted input as per registration protocol
+        snprintf(payload, sizeof(payload), "REGISTER %s KEY %s", username, activeKey);
+        
+        //encrypt the registration payload before sending
+        int payloadLen = strlen(payload);
+        applyXOR(payload, payloadLen, activeKey);
+        send(clientSocketFD, payload, payloadLen, 0);
 
         //wait for server reply
         int n = recv(clientSocketFD, response, sizeof(response) - 1, 0);
         if (n > 0) {
+            //decrypt server response
+            applyXOR(response, n, activeKey);
             response[n] = '\0';
             
             //if it starts with ERROR, print red. Otherwise, green/yellow.
-            if (strncmp(response, "ERROR", 5) == 0) {
+            if (strncmp(response, "ERROR", 5) == 0) 
                 printf(COLOR_RED "server$ %s\n" COLOR_RESET, response);
-            } else {
+            else 
                 printf(COLOR_GREEN "server$ %s\n" COLOR_RESET, response);
-            }
             
             //if successful, break out of loop and enter the chat
-            if (strncmp(response, "REGISTERED", 10) == 0) {
+            if (strncmp(response, "REGISTERED", 10) == 0) 
                 break; 
-            }
         } 
         else {
             printf(COLOR_RED "Server disconnected.\n" COLOR_RESET);
@@ -410,7 +455,7 @@ void sendUsername(int clientSocketFD) {
 
 
 //intercept keyboard input and package files if necessary
-void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
+void processClientInput(int clientSocketFD, char* line, ssize_t charCount, const char* activeKey) {
     if (strncmp(line, "SENDFILE TO ", 12) == 0) {
         char targetName[32];
         char filename[256];
@@ -434,6 +479,9 @@ void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
                     int headerLen = snprintf(fileBuf, fsize + 1024, "SENDFILE TO %s %s %ld\n", targetName, filename, fsize);
                     
                     fread(fileBuf + headerLen, 1, fsize, f);
+                    
+                    //encrypt header and raw payload
+                    applyXOR(fileBuf, headerLen + fsize, activeKey);
                     send(clientSocketFD, fileBuf, headerLen + fsize, 0);
                     free(fileBuf);
                 }
@@ -445,7 +493,8 @@ void processClientInput(int clientSocketFD, char* line, ssize_t charCount) {
         }
     } 
     else {
-        //normal text message
+        //encrypt normal text message
+        applyXOR(line, charCount, activeKey);
         send(clientSocketFD, line, charCount, 0);
     }
 }
@@ -491,7 +540,7 @@ void processServerMessage(char* buffer, int n) {
 }
 
 //poll for client, so it can handle keyboard input and server chat at the same time
-void runClientLoop(int clientSocketFD) {
+void runClientLoop(int clientSocketFD, const char* activeKey) {
     struct pollfd fds[2];
     
     fds[0].fd = STDIN_FILENO;
@@ -519,7 +568,9 @@ void runClientLoop(int clientSocketFD) {
             if(charCount > 0) {
                 //check for disconnect commands
                 if(strcmp(line, "exit\n") == 0 || strcmp(line, "QUIT\n") == 0) {
-                    send(clientSocketFD, "QUIT", 4, 0); 
+                    char quitMsg[] = "QUIT";
+                    applyXOR(quitMsg, 4, activeKey); //encrypt QUIT command
+                    send(clientSocketFD, quitMsg, 4, 0); 
                     free(line); 
                     break;
                 }
@@ -529,7 +580,7 @@ void runClientLoop(int clientSocketFD) {
                 }
                 //process normal chat or file transfers
                 else {
-                    processClientInput(clientSocketFD, line, charCount);
+                    processClientInput(clientSocketFD, line, charCount, activeKey);
                 }
             }
             free(line); 
@@ -544,6 +595,8 @@ void runClientLoop(int clientSocketFD) {
                 break;
             } 
             else {
+                //decrypt incoming server message
+                applyXOR(serverBuffer, n, activeKey);
                 processServerMessage(serverBuffer, n);
             }
         }
@@ -579,7 +632,6 @@ void printBanner(const char* filepath) {
         return;
     
     char line[256];
-    printf(COLOR_CYAN);
     
     while (fgets(line, sizeof(line), file)) {
         printf("%s", line);

@@ -31,12 +31,13 @@ int main() {
     printBanner("../ClientSocket/banner.txt");
     printf(COLOR_YELLOW "Ping! Join the conversation down below:\n\n" COLOR_RESET);
 
-    sendUsername(clientSocketFD);
+    char activeKey[32];
+    sendUsername(clientSocketFD, activeKey);
 
     printf(COLOR_GREEN "You are now in the chat.\n" COLOR_RESET);
     printHelpMenu("../ClientSocket/protocols.txt");
 
-    runClientLoop(clientSocketFD);
+    runClientLoop(clientSocketFD, activeKey);
 
     close(clientSocketFD);
     free(saddr); 

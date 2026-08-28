@@ -1,4 +1,4 @@
-# Team Ping! Secure Chat Application
+# Ping! A Secure Chat Application.
 
 ```text
   ____  _             !
