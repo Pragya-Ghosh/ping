@@ -11,41 +11,51 @@
 
 //prompt client for username and key
 void sendUsername(int clientSocketFD, char* activeKey) {
-    char username[32];
     char payload[100];
     char response[1024];
-    
+    char parsedName[32];
+
     while (1) {
-        printf("Enter your username: ");
-        fgets(username, sizeof(username), stdin);
-        username[strcspn(username, "\n")] = '\0'; 
-
-        printf("Enter your encryption key: ");
-        fgets(activeKey, 32, stdin);
-        activeKey[strcspn(activeKey, "\n")] = '\0';
-
-        //formatted input as per registration protocol
-        snprintf(payload, sizeof(payload), "REGISTER %s KEY %s", username, activeKey);
+        printf("client$ "); 
         
-        //encrypt the registration payload before sending
+        fgets(payload, sizeof(payload), stdin);
+        
+        // strip trailing newline to get a clean parsing
+        payload[strcspn(payload, "\n")] = '\0';
+
+        //validate protocol syntax locally before network transmission; this prevents 
+        //malformed data from reaching the socket and breaking the server's parser
+        if (sscanf(payload, "REGISTER %31s KEY %31s", parsedName, activeKey) != 2) {
+            printf(COLOR_RED "client$ ERROR invalid format. Use: REGISTER <name> KEY <key>\n" COLOR_RESET);
+            continue;
+        }
+
+        //restrict key length to 9 bytes; this is a cryptographic limitation 
+        //required by the server's known-plaintext deduction logic (XORing against "REGISTER ")
+        if (strlen(activeKey) > 9) {
+            printf(COLOR_RED "client$ ERROR Key must be 9 characters or less.\n" COLOR_RESET);
+            continue; 
+        }
+
+        //encrypt the message
         int payloadLen = strlen(payload);
         applyXOR(payload, payloadLen, activeKey);
         send(clientSocketFD, payload, payloadLen, 0);
 
-        //wait for server reply
+        // block and wait for server validation
         int n = recv(clientSocketFD, response, sizeof(response) - 1, 0);
         if (n > 0) {
-            //decrypt server response
+            //reverse the XOR operation using the negotiated symmetric key
             applyXOR(response, n, activeKey);
             response[n] = '\0';
             
-            //if it starts with ERROR, print red; otherwise, default color with reset
+            //format system notifications dynamically based on payload status
             if (strncmp(response, "ERROR", 5) == 0) 
                 printf(COLOR_RED "server$ %s" COLOR_RESET "\n", response);
             else 
                 printf(COLOR_GREEN "server$ %s" COLOR_RESET "\n", response);
             
-            //if successful, break out of loop and enter the chat
+            //terminate the registration loop and transition client to active chat phase
             if (strncmp(response, "REGISTERED", 10) == 0) 
                 break; 
         } 
