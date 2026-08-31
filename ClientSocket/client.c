@@ -176,10 +176,10 @@ void runClientLoop(int clientSocketFD, const char* activeKey) {
                 //check for disconnect commands
                 if(strcmp(line, "exit\n") == 0 || strcmp(line, "QUIT\n") == 0) {
                     char quitMsg[] = "QUIT";
-                    applyXOR(quitMsg, 4, activeKey); //encrypt QUIT command
+                    applyXOR(quitMsg, 4, activeKey); 
                     send(clientSocketFD, quitMsg, 4, 0); 
                     free(line); 
-                    break;
+                    continue; //keep polling for the goodbye message
                 }
                 //check for local HELP command
                 else if (strcmp(line, "HELP\n") == 0) {
@@ -210,3 +210,4 @@ void runClientLoop(int clientSocketFD, const char* activeKey) {
     }
     free(serverBuffer);
 }
+

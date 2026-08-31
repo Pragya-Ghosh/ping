@@ -38,20 +38,20 @@ void removeClient(int i, struct pollfd fds[], char clientNames[][32], char clien
 int isDuplicateUsername(char* username, struct pollfd fds[], char clientNames[][32]) {
     for (int j = 1; j < 100; j++) {
         if (fds[j].fd != -1 && strcmp(clientNames[j], username) == 0) {
-            return 1; //found a match
+            return 1; 
         }
     }
-    return 0; //no duplicate
+    return 0; 
 }
 
-//find socket index by username (returns -1 if offline)
+//find socket index by username 
 int findClientIndex(char* targetName, struct pollfd fds[], char clientNames[][32]) {
     for (int j = 1; j < 100; j++) {
         if (fds[j].fd != -1 && strcmp(clientNames[j], targetName) == 0) {
             return j;
         }
     }
-    return -1;
+    return -1; //user is offline
 }
 
 //process new connection on server socket
@@ -83,7 +83,7 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
     if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
         if (isDuplicateUsername(parsedName, fds, clientNames)) {
             char errMsg[] = "ERROR username already taken\n";
-            send(fds[i].fd, errMsg, strlen(errMsg), 0); //plaintext since key is rejected
+            secureSend(fds[i].fd, errMsg, strlen(errMsg), parsedKey);
         } 
         else {
             strcpy(clientNames[i], parsedName);
@@ -99,7 +99,7 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
     } 
     else {
         char errMsg[] = "ERROR invalid command format\n";
-        send(fds[i].fd, errMsg, strlen(errMsg), 0); //plaintext on bad initial format
+        send(fds[i].fd, errMsg, strlen(errMsg), 0); 
     }
 }
 
