@@ -173,7 +173,7 @@ void handleList(int i, struct pollfd fds[], char clientNames[][32], char clientK
 //process SENDFILE command
 void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char targetName[32];
-    char filename[128];
+    char filename[256]; //increased to match client capacity for long absolute paths
     int fileSize;
 
     //find the newline that separates the protocol header from the file payload
@@ -190,7 +190,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
     int actualPayloadBytes = n - headerLen; 
 
     //parse framing format: SENDFILE TO <username> <filename> <size>
-    if (sscanf(buffer, "SENDFILE TO %31s %127s %d", targetName, filename, &fileSize) == 3) {
+    if (sscanf(buffer, "SENDFILE TO %31s %255s %d", targetName, filename, &fileSize) == 3) { //parse up to 255 chars
         
         //check for valid .txt extension
         char* ext = strrchr(filename, '.');
