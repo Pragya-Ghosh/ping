@@ -119,7 +119,7 @@ void processServerMessage(char* buffer, int n) {
     
     if (strncmp(buffer, "RECVFILE FROM ", 14) == 0) {
         char sender[32];
-        char filename[128];
+        char filename[256];
         int fsize;
         
         char* payload = strchr(buffer, '\n');

@@ -173,7 +173,9 @@ void handleList(int i, struct pollfd fds[], char clientNames[][32], char clientK
 //process SENDFILE command
 void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     char targetName[32];
-    char filename[256]; //increased to match client capacity for long absolute paths
+    
+    //allocates 256 bytes to support both standard short paths and long absolute paths 
+    char filename[256]; 
     int fileSize;
 
     //find the newline that separates the protocol header from the file payload
@@ -185,12 +187,15 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
     }
     
     *payload = '\0'; //split header and payload
-    payload++; //point to the first byte of the file
+    payload++; //point to the first byte of the file payload
+    
+    //determine exactly how many raw bytes were received in this frame to avoid 
+    //relying on null-terminators, which would break on binary data
     int headerLen = payload - buffer;
     int actualPayloadBytes = n - headerLen; 
 
-    //parse framing format: SENDFILE TO <username> <filename> <size>
-    if (sscanf(buffer, "SENDFILE TO %31s %255s %d", targetName, filename, &fileSize) == 3) { //parse up to 255 chars
+    //parse framing format: strictly enforce the length-prefixed format[cite: 4]
+    if (sscanf(buffer, "SENDFILE TO %31s %255s %d", targetName, filename, &fileSize) == 3) {
         
         //check for valid .txt extension
         char* ext = strrchr(filename, '.');
@@ -200,7 +205,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             return;
         }
 
-        //check size limit (1MB max)
+        //check size limit (1MB max) to safely avoid chunked transfers[cite: 4]
         if (fileSize > 1048576) {
             char errMsg[] = "ERROR file exceeds 1MB limit\n";
             secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
@@ -209,13 +214,15 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
 
         int targetIndex = findClientIndex(targetName, fds, clientNames);
         if (targetIndex != -1) {
-            //construct receiver frame: RECVFILE FROM <sender> <filename> <size>\n
-            char header[256];
+            
+            //construct receiver frame using length-prefixed format
+            //buffer increased to 512 to ensure large absolute paths do not truncate the frame
+            char header[512];
             int hLen = snprintf(header, sizeof(header), "RECVFILE FROM %s %s %d\n", clientNames[i], filename, fileSize);
             
             //forward header and raw payload securely
-            //stitch header and payload together before encrypting
-            //TCP is a stream protocol, so it glues these two consecutive sends into one continuous block over the network
+            //stitch header and payload together in memory using memcpy instead of strcat
+            //this is critical because the payload may contain null bytes that would stop a string copy
             char* combinedBuffer = malloc(hLen + actualPayloadBytes);
             memcpy(combinedBuffer, header, hLen);
             memcpy(combinedBuffer + hLen, payload, actualPayloadBytes);
@@ -231,19 +238,25 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             snprintf(errMsg, sizeof(errMsg), "ERROR %s is not online\n", targetName);
             secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         }
+    } 
+    else {
+        //catches badly formatted file transfers that are missing the size prefix
+        char errMsg[] = "ERROR invalid command format\n";
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
     }
 }
 
 //route active chat commands
 void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char clientNames[][32], char clientKeys[][32]) {
     
-    //sendfile payloads have raw bytes, so do not strip newlines
+    //intercept length-prefixed frames here before modifying the buffer
+    //sendfile payloads have raw bytes, so do not strip newlines or treat them as strings
     if (strncmp(buffer, "SENDFILE TO ", 12) == 0) {
         handleSendFile(i, buffer, n, fds, clientNames, clientKeys);
         return;
     }
 
-    //for normal text commands, safely strip trailing newline
+    //for normal text commands, strip trailing newline
     buffer[strcspn(buffer, "\r\n")] = '\0';
 
     char targetName[32];
@@ -269,7 +282,7 @@ void handleChatCommand(int i, char* buffer, int n, struct pollfd fds[], char cli
         fflush(stdout);
     }
     else {
-        //catches completely unrecognizable commands
+        //catches completely unrecognizable commands so the server doesn't crash
         char errMsg[] = "ERROR unknown command\n";
         secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
         printf(COLOR_RED "[SERVER LOG] Unknown command rejected from %s\n" COLOR_RESET, clientNames[i]);
@@ -366,9 +379,8 @@ void startConnections(int serverSocketFD) {
                     else {
                         // decrypt incoming data before parsing
                         applyXOR(buffer, n, clientKeys[i]);
-                        buffer[n] = '\0';
                         
-                        // pass exact byte count 'n' for file handling
+                        //pass exact byte count 'n' for file handling instead of relying on null bytes
                         handleChatCommand(i, buffer, n, fds, clientNames, clientKeys);
                     }
                 }
