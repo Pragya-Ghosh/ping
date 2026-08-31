@@ -10,7 +10,7 @@
 #include "client.h"
 
 //prompt client for username and key
-void sendUsername(int clientSocketFD, char* activeKey) {
+void sendUsername(int clientSocketFD, char* activeKey, char* savedUsername) {
     char payload[100];
     char response[1024];
     char parsedName[32];
@@ -20,7 +20,7 @@ void sendUsername(int clientSocketFD, char* activeKey) {
         
         fgets(payload, sizeof(payload), stdin);
         
-        // strip trailing newline to get a clean parsing
+        //strip trailing newline to get a clean parsing
         payload[strcspn(payload, "\n")] = '\0';
 
         //validate protocol syntax locally before network transmission; this prevents 
@@ -56,8 +56,10 @@ void sendUsername(int clientSocketFD, char* activeKey) {
                 printf(COLOR_GREEN "server$ %s" COLOR_RESET "\n", response);
             
             //terminate the registration loop and transition client to active chat phase
-            if (strncmp(response, "REGISTERED", 10) == 0) 
+            if (strncmp(response, "REGISTERED", 10) == 0) {
+                strcpy(savedUsername, parsedName); //save the name for the dynamic prompt
                 break; 
+            }
         } 
         else {
             printf(COLOR_RED "Server disconnected\n" COLOR_RESET);
@@ -162,7 +164,7 @@ void processServerMessage(char* buffer, int n) {
 }
 
 //poll for client, so it can handle keyboard input and server chat at the same time
-void runClientLoop(int clientSocketFD, const char* activeKey) {
+void runClientLoop(int clientSocketFD, const char* activeKey, const char* savedUsername) {
     struct pollfd fds[2];
     
     fds[0].fd = STDIN_FILENO;
@@ -175,6 +177,10 @@ void runClientLoop(int clientSocketFD, const char* activeKey) {
     char* serverBuffer = malloc(1048576 + 1024);
 
     while(1) {
+        //print the dynamic username prompt required by the spec
+        printf("%s$ ", savedUsername); 
+        fflush(stdout);
+
         int poll_count = poll(fds, 2, -1);
         if (poll_count < 0) {
             perror("Poll error");
@@ -217,6 +223,9 @@ void runClientLoop(int clientSocketFD, const char* activeKey) {
                 break;
             } 
             else {
+                //drop down a line so the incoming message doesn't collide with the prompt
+                printf("\n"); 
+                
                 //decrypt incoming server message
                 applyXOR(serverBuffer, n, activeKey);
                 processServerMessage(serverBuffer, n);

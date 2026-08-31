@@ -43,12 +43,16 @@ int main(int argc, char *argv[]) {
     printf(COLOR_YELLOW "Ping! Join the conversation down below:\n\n" COLOR_RESET);
 
     char activeKey[32];
-    sendUsername(clientSocketFD, activeKey);
+    char savedUsername[32]; //buffer to hold the username for the dynamic UI prompt
+    
+    //pass the savedUsername buffer to populate it upon successful registration
+    sendUsername(clientSocketFD, activeKey, savedUsername);
 
     printf(COLOR_GREEN "You are now in the chat.\n" COLOR_RESET);
     printHelpMenu("../ClientSocket/protocols.txt");
 
-    runClientLoop(clientSocketFD, activeKey);
+    //pass the populated username into the loop for dynamic prompt
+    runClientLoop(clientSocketFD, activeKey, savedUsername);
 
     close(clientSocketFD);
     free(saddr); 
