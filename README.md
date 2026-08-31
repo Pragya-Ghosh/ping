@@ -27,10 +27,10 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 * Client: `./client <server_ip> <port>` 
 
 ## Cipher Choice
-I chose the Repeating-Key XOR cipher over the Vigenère and Mini Substitution-Permutation options because it operates directly at the bitwise level, making it incredibly lightweight and efficient in C. Unlike Vigenère, which is traditionally restricted to alphabetical letters, XOR seamlessly works on arbitrary printable text, including the specific newline (\n) delimiter characters used in our protocol framing. Also, it avoids the complex block matrices of a Substitution-Permutation network, allowing us to encrypt large 1MB file buffers entirely in-place without allocating extra heap memory.
+I chose the Repeating-Key XOR cipher. Unlike Vigenère, which is traditionally restricted to alphabetical letters, XOR seamlessly works on arbitrary printable text, including the specific newline (\n) delimiter characters used in the protocol framing. It also avoids the complex block matrices of a Substitution-Permutation network, allowing us to encrypt large 1MB file buffers entirely in-place without allocating extra heap memory.
 
 **Known weakness:**
-The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and frequency analysis. If an attacker knows or guesses a predictable part of the message (such as our protocol's REGISTER  or SENDFILE TO  headers), they can simply XOR the intercepted ciphertext against that known plaintext to instantly reveal the secret key. Additionally, if the message is significantly longer than the key, an attacker can use index of coincidence or Hamming distance calculations to deduce the key's length and crack the cipher. (The server actually exploits this exact known-plaintext vulnerability to logically deduce a new client's key during the encrypted registration handshake).
+The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and frequency analysis. If an attacker knows or guesses a predictable part of the message (such as our protocol's REGISTER  or SENDFILE TO  headers), they can simply XOR the intercepted ciphertext against that known plaintext to instantly reveal the secret key. Also, if the message is significantly longer than the key, an attacker can use index of coincidence or Hamming distance calculations to deduce the key's length and crack the cipher. (The server actually exploits this known-plaintext vulnerability to logically deduce a new client's key during the encrypted registration handshake).
 
 ## Architecture Flow (Hop-by-Hop Encryption)
 ```text
@@ -76,9 +76,20 @@ The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and
 * The 1MB file transfer limit means large files will be explicitly rejected by the server rather than chunked.
 * The server relies on a centralized architecture; if the main server process terminates, all client connections are dropped simultaneously.
 
-## UI & Terminal Aesthetics
-To enhance readability and provide clear visual feedback in the command-line interface, the application utilizes standard ANSI escape codes for local terminal output.
+## Available Commands
+* **`SEND TO <username>: <message>`** — Send a private message
+* **`SEND ALL: <message>`** — Broadcast to everyone
+* **`SENDFILE TO <username>: <file>`** — Send a .txt file (max 1MB)
+* **`LIST`** — Show online users
+* **`HELP`** — Show this menu
+* **`QUIT`** — Disconnect and exit
+
+## Terminal UI
+The application utilizes standard ANSI escape codes for local terminal output.
 * **Red (`\x1b[31m`):** Used for critical failures, bad input warnings, server disconnections, and error states.
 * **Green (`\x1b[32m`):** Highlights successful operations, such as completing the registration handshake or successfully downloading a file payload.
 * **Yellow (`\x1b[33m`):** Denotes local system alerts, local terminal prompts, and non-critical server events like client disconnects.
 * **Cyan (`\x1b[36m`):** Used for UI menus and routing logs.
+
+## GitHub Repo
+For access to version history: [Ping!](https://github.com/Pragya-Ghosh/ping)
