@@ -82,7 +82,8 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
 
     if (sscanf(buffer, "REGISTER %31s KEY %31s", parsedName, parsedKey) == 2) {
         if (isDuplicateUsername(parsedName, fds, clientNames)) {
-            char errMsg[] = "ERROR username already taken\n";
+            char errMsg[100]; 
+            snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
             secureSend(fds[i].fd, errMsg, strlen(errMsg), parsedKey);
         } 
         else {

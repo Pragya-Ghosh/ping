@@ -139,10 +139,15 @@ void processServerMessage(char* buffer, int n) {
     } 
     else {
         //normal server text message 
-        if (strncmp(buffer, "ERROR", 5) == 0) 
-            printf(COLOR_RED "%s" COLOR_RESET "\n", buffer);
-        else 
+        if (strncmp(buffer, "ERROR", 5) == 0) {
+            printf(COLOR_RED "server$ %s" COLOR_RESET "\n", buffer);
+        }
+        else if (strncmp(buffer, "ONLINE", 6) == 0 || strncmp(buffer, "GOODBYE", 7) == 0) {
+            printf(COLOR_YELLOW "server$ %s" COLOR_RESET, buffer);
+        }
+        else {
             printf("%s", buffer);
+        }
     }
 }
 
