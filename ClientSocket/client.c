@@ -175,11 +175,15 @@ void runClientLoop(int clientSocketFD, const char* activeKey, const char* savedU
 
     //allocate 1MB buffer on heap to handle incoming files
     char* serverBuffer = malloc(1048576 + 1024);
+    
+    int isQuitting = 0; //flag to mute the UI during the disconnect sequence
 
     while(1) {
         //print the dynamic username prompt required by the spec
-        printf("%s$ ", savedUsername); 
-        fflush(stdout);
+        if (!isQuitting) {
+            printf("%s$ ", savedUsername); 
+            fflush(stdout);
+        }
 
         int poll_count = poll(fds, 2, -1);
         if (poll_count < 0) {
@@ -200,6 +204,8 @@ void runClientLoop(int clientSocketFD, const char* activeKey, const char* savedU
                     applyXOR(quitMsg, 4, activeKey); 
                     send(clientSocketFD, quitMsg, 4, 0); 
                     free(line); 
+                    
+                    isQuitting = 1; //mute the prompt while waiting for the server to close
                     continue; //keep polling for the goodbye message
                 }
                 //check for local HELP command
@@ -219,12 +225,17 @@ void runClientLoop(int clientSocketFD, const char* activeKey, const char* savedU
             int n = recv(clientSocketFD, serverBuffer, 1048576 + 1023, 0);
             
             if (n <= 0) {
-                printf(COLOR_RED "\nServer closed the connection.\n" COLOR_RESET);
+                //only print the error if the server crashed or dropped us unexpectedly
+                if (!isQuitting) {
+                    printf(COLOR_RED "\nServer closed the connection.\n" COLOR_RESET);
+                }
                 break;
             } 
             else {
                 //drop down a line so the incoming message doesn't collide with the prompt
-                printf("\n"); 
+                if (!isQuitting) {
+                    printf("\n"); 
+                }
                 
                 //decrypt incoming server message
                 applyXOR(serverBuffer, n, activeKey);
