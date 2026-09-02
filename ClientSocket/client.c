@@ -30,23 +30,16 @@ void sendUsername(int clientSocketFD, char* activeKey, char* savedUsername) {
             continue;
         }
 
-        //restrict key length to 9 bytes; this is a cryptographic limitation 
-        //required by the server's known-plaintext deduction logic (XORing against "REGISTER ")
-        if (strlen(activeKey) > 9) {
-            printf(COLOR_RED "client$ ERROR Key must be 9 characters or less.\n" COLOR_RESET);
-            continue; 
-        }
-
-        //encrypt the message
+        //encrypt the message using the temporary handshake key
         int payloadLen = strlen(payload);
-        applyXOR(payload, payloadLen, activeKey);
+        applyXOR(payload, payloadLen, "SETUP");
         send(clientSocketFD, payload, payloadLen, 0);
 
         // block and wait for server validation
         int n = recv(clientSocketFD, response, sizeof(response) - 1, 0);
         if (n > 0) {
-            //reverse the XOR operation using the negotiated symmetric key
-            applyXOR(response, n, activeKey);
+            //reverse the XOR operation using the handshake key
+            applyXOR(response, n, "SETUP");
             response[n] = '\0';
             
             //format system notifications dynamically based on payload status
@@ -245,4 +238,3 @@ void runClientLoop(int clientSocketFD, const char* activeKey, const char* savedU
     }
     free(serverBuffer);
 }
-

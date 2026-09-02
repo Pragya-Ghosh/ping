@@ -84,7 +84,8 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
         if (isDuplicateUsername(parsedName, fds, clientNames)) {
             char errMsg[100]; 
             snprintf(errMsg, sizeof(errMsg), "ERROR username %s already taken\n", parsedName);
-            secureSend(fds[i].fd, errMsg, strlen(errMsg), parsedKey);
+            //reply using the handshake key so the connecting client can read it
+            secureSend(fds[i].fd, errMsg, strlen(errMsg), "SETUP");
         } 
         else {
             strcpy(clientNames[i], parsedName);
@@ -92,7 +93,8 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
             
             char successMsg[100];
             snprintf(successMsg, sizeof(successMsg), "REGISTERED %s\n", parsedName);
-            secureSend(fds[i].fd, successMsg, strlen(successMsg), clientKeys[i]);
+            //reply using the handshake key so the connecting client can read it
+            secureSend(fds[i].fd, successMsg, strlen(successMsg), "SETUP");
             
             printf(COLOR_GREEN "[SERVER LOG] %s registered successfully\n" COLOR_RESET, clientNames[i]);
             fflush(stdout);
@@ -100,7 +102,8 @@ void handleRegistration(int i, char* buffer, struct pollfd fds[], char clientNam
     } 
     else {
         char errMsg[] = "ERROR invalid command format\n";
-        send(fds[i].fd, errMsg, strlen(errMsg), 0); 
+        //reply using the handshake key
+        secureSend(fds[i].fd, errMsg, strlen(errMsg), "SETUP"); 
     }
 }
 
@@ -194,7 +197,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
     int headerLen = payload - buffer;
     int actualPayloadBytes = n - headerLen; 
 
-    //parse framing format: strictly enforce the length-prefixed format[cite: 4]
+    //parse framing format: strictly enforce the length-prefixed format
     if (sscanf(buffer, "SENDFILE TO %31s %255s %d", targetName, filename, &fileSize) == 3) {
         
         //check for valid .txt extension
@@ -205,7 +208,7 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
             return;
         }
 
-        //check size limit (1MB max) to safely avoid chunked transfers[cite: 4]
+        //check size limit (1MB max) to safely avoid chunked transfers
         if (fileSize > 1048576) {
             char errMsg[] = "ERROR file exceeds 1MB limit\n";
             secureSend(fds[i].fd, errMsg, strlen(errMsg), clientKeys[i]);
@@ -307,9 +310,8 @@ void startConnections(int serverSocketFD) {
     printf(COLOR_YELLOW "Ping! Server polling for connections...\n" COLOR_RESET);
     fflush(stdout);
 
-    //Allocate 1MB buffers safely on the heap to prevent stack overflows
+    //Allocate 1MB buffer safely on the heap to prevent stack overflows
     char* buffer = malloc(1048576 + 1024);
-    char* tempDecrypted = malloc(1048576 + 1024);
 
     while (1) {
         int poll_count = poll(fds, 100, -1); 
@@ -345,32 +347,8 @@ void startConnections(int serverSocketFD) {
                             continue;
                         }
 
-                        // deduce key if registration is encrypted 
-                        if (strncmp(buffer, "REGISTER ", 9) != 0) {
-                            
-                            // try all possible key lengths up to 9
-                            for (int kLen = 1; kLen <= 9; kLen++) {
-                                char testKey[32] = {0};
-                                
-                                for (int k = 0; k < kLen; k++) {
-                                    testKey[k] = buffer[k] ^ "REGISTER "[k];
-                                }
-                                testKey[kLen] = '\0';
-                                
-                                // Safely copy n bytes into our 1MB heap buffer
-                                memcpy(tempDecrypted, buffer, n);
-                                applyXOR(tempDecrypted, n, testKey);
-                                tempDecrypted[n] = '\0';
-                                
-                                char pName[32], pKey[32];
-                                if (sscanf(tempDecrypted, "REGISTER %31s KEY %31s", pName, pKey) == 2) {
-                                    if (strcmp(pKey, testKey) == 0) {
-                                        memcpy(buffer, tempDecrypted, n); // restore plaintext
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                        // decrypt the initial handshake using the temporary key
+                        applyXOR(buffer, n, "SETUP");
                         
                         buffer[n] = '\0';
                         buffer[strcspn(buffer, "\r\n")] = '\0';
@@ -379,6 +357,7 @@ void startConnections(int serverSocketFD) {
                     else {
                         // decrypt incoming data before parsing
                         applyXOR(buffer, n, clientKeys[i]);
+                        buffer[n] = '\0';
                         
                         //pass exact byte count 'n' for file handling instead of relying on null bytes
                         handleChatCommand(i, buffer, n, fds, clientNames, clientKeys);
@@ -386,7 +365,6 @@ void startConnections(int serverSocketFD) {
                 }
             }
         }
-    }
+    } 
     free(buffer);
-    free(tempDecrypted);
 }
