@@ -219,13 +219,12 @@ void handleSendFile(int i, char* buffer, int n, struct pollfd fds[], char client
         if (targetIndex != -1) {
             
             //construct receiver frame using length-prefixed format
-            //buffer increased to 512 to ensure large absolute paths do not truncate the frame
             char header[512];
             int hLen = snprintf(header, sizeof(header), "RECVFILE FROM %s %s %d\n", clientNames[i], filename, fileSize);
             
             //forward header and raw payload securely
             //stitch header and payload together in memory using memcpy instead of strcat
-            //this is critical because the payload may contain null bytes that would stop a string copy
+            //this is because the payload may contain null bytes that would stop a string copy
             char* combinedBuffer = malloc(hLen + actualPayloadBytes);
             memcpy(combinedBuffer, header, hLen);
             memcpy(combinedBuffer + hLen, payload, actualPayloadBytes);

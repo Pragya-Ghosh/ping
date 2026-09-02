@@ -30,7 +30,7 @@ This project uses CMake to ensure cross-platform compatibility and clean source 
 I chose the Repeating-Key XOR cipher. Unlike Vigenère, which is traditionally restricted to alphabetical letters, XOR seamlessly works on arbitrary printable text, including the specific newline (\n) delimiter characters used in the protocol framing. It also avoids the complex block matrices of a Substitution-Permutation network, allowing us to encrypt large 1MB file buffers entirely in-place without allocating extra heap memory.
 
 **Known weakness:**
-The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and frequency analysis. If an attacker knows or guesses a predictable part of the message (such as our protocol's REGISTER  or SENDFILE TO  headers), they can simply XOR the intercepted ciphertext against that known plaintext to instantly reveal the secret key. Also, if the message is significantly longer than the key, an attacker can use index of coincidence or Hamming distance calculations to deduce the key's length and crack the cipher. (The server actually exploits this known-plaintext vulnerability to logically deduce a new client's key during the encrypted registration handshake).
+The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and frequency analysis. If an attacker knows or guesses a predictable part of the message (such as our protocol's REGISTER  or SENDFILE TO  headers), they can simply XOR the intercepted ciphertext against that known plaintext to instantly reveal the secret key. 
 
 ## Architecture Flow (Hop-by-Hop Encryption)
 ```text
@@ -61,7 +61,9 @@ The Repeating-Key XOR cipher is highly vulnerable to known-plaintext attacks and
 ```
 
 ## Design Notes
-* **Hop-by-hop encryption:** This scheme decrypts and re-encrypts messages per client key at the server level. The server briefly holds the plaintext in memory to parse commands (like `SEND TO`) and re-encrypts the payload using the recipient's key before forwarding. True end-to-end encryption would require clients to establish a shared key directly with each other (e.g., via Diffie-Hellman key exchange) without the server ever possessing the ability to decrypt the payloads.
+* **Handshake Protocol:** To solve the cryptographic paradox of exchanging a secret key over an encrypted channel before the server knows the user's key, the application uses a pre-shared temporary handshake key (SETUP). This allows the server to decrypt the registration packet, cleanly parse the user's chosen key (without any length restrictions), and seamlessly switch to that unique key for all subsequent chat and file routing.
+
+* **Hop-by-hop encryption:** This scheme decrypts and re-encrypts messages per client key at the server level. The server briefly holds the plaintext in memory to parse commands (like SEND TO) and re-encrypts the payload using the recipient's key before forwarding. True end-to-end encryption would require clients to establish a shared key directly with each other (e.g., via Diffie-Hellman key exchange) without the server ever possessing the ability to decrypt the payloads.
 
 * **File transfer size cap:** 1 MB. This hard limit prevents buffer overflow faults and ensures stable heap allocation without requiring chunked or streaming transfer implementations.
 
